@@ -16,11 +16,11 @@ class ShipmentQnaFormatter(logging.Formatter):
     Deiberately keep it human-readable but structured enough to grep through logs.
     """
 
-    # dd_MMM_yy_HH_MM e.g 24_Nov_25_14_12
+    # dd_MMM_yy_HH_MM -> 24_Nov_25_14_12
     _time_format = "%d_%b_%y_%H_%M"
 
     def format(self, record: logging.LogRecord) -> str:
-        # convert epoch to local time
+        # convert into local time
         dt = datetime.datetime.fromtimestamp(record.created)
         timestamp_str = dt.strftime(self._time_format)
 

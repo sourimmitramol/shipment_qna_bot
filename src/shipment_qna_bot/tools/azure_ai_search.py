@@ -111,7 +111,7 @@ class AzureAISearchTool:
             "search_text": query_text or "*",
             "top": top_k,
             "filter": final_filter,
-            "select": select,
+            "select": None,  # Retrieve all retrievable fields
             "include_total_count": include_total_count,
             "facets": facets,
         }
@@ -135,21 +135,26 @@ class AzureAISearchTool:
         for r in results:
             doc = dict(r)
 
-            # Extract container number
-            raw_container = doc.get(self._container_field)
-            container_number = raw_container
-            if isinstance(raw_container, dict) and "container_number" in raw_container:
-                container_number = raw_container["container_number"]
+            # Extract flattened values for easy access, but keep full doc
+            container_number = doc.get("container_number")
+            if not container_number:
+                raw_meta = doc.get(self._container_field)
+                if isinstance(raw_meta, dict):
+                    container_number = raw_meta.get("container_number")
 
-            hits.append(
-                {
-                    "doc_id": doc.get(self._id_field),
-                    "container_number": container_number,
-                    "content": doc.get(self._content_field),
-                    "score": doc.get("@search.score"),
-                    "reranker_score": doc.get("@search.reranker_score"),
-                }
-            )
+            hit = {
+                "doc_id": doc.get(self._id_field),
+                "container_number": container_number,
+                "content": doc.get(self._content_field),
+                "score": doc.get("@search.score"),
+                "reranker_score": doc.get("@search.reranker_score"),
+            }
+            # Include all other fields except vectors to avoid bloat
+            for k, v in doc.items():
+                if k not in hit and k != self._vector_field:
+                    hit[k] = v
+
+            hits.append(hit)
 
         return {
             "hits": hits,

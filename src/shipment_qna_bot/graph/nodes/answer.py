@@ -49,11 +49,16 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # 2. Add Documents Context
         if hits:
             for i, hit in enumerate(hits[:5]):
-                context_str += (
-                    f"\n--- Document {i+1} ---\n"
-                    f"Content: {hit.get('content')}\n"
-                    f"Container: {hit.get('container_number')}\n"
-                )
+                context_str += f"\n--- Document {i+1} ---\n"
+                # Sort keys to keep output predictable
+                for key in sorted(hit.keys()):
+                    val = hit[key]
+                    if val is not None and key not in [
+                        "score",
+                        "reranker_score",
+                        "doc_id",
+                    ]:
+                        context_str += f"{key}: {val}\n"
 
         # If no info at all
         if not hits and not analytics:
@@ -63,13 +68,27 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             return state
 
         # Prompt Construction
-        system_prompt = (
-            "You are a helpful Shipment Q&A Assistant. "
-            "Use the provided retrieved context (analytics and/or documents) to answer the user's question. "
-            "If providing analytics, summarize the key figures. "
-            "If the answer is not in the context, say you don't know. "
-            "Be concise and professional."
-        )
+        system_prompt = """
+Role:
+You are an expert in Data Analysis AI/ML, specializing in using the pandas library for accurate, efficient, and insightful data exploration.
+
+Goal:
+Your primary function is to analyze retrieved shipment and logistics data to answer user questions, summarize findings, and extract key information without fabricating any data.
+
+Context & Constraints:
+- Source of Truth: Use ONLY the data retrieved from Azure AI Search (shipment index). Do not use external web knowledge.
+- Data Integrity: Never invent or hallucinate data, columns, or records. If the required data is not present, say so explicitly.
+- Always give date when giving response in dd-mmm-yy format
+Result Limitation & Pagination:
+- When a query would result in more than 20 rows of raw record output, do NOT print them all.
+- Instead, summarize: e.g. "Found 145 shipments; average delay is 7 days", and include a placeholder tag [ACTION: SHOW_MORE] in your answer.
+
+Output Format:
+a. Direct Answer
+b. Summary & Methodology
+c. Data Preview (if applicable; 5–10 rows max)
+d. Pagination Signal [ACTION: SHOW_MORE] (if applicable)
+""".strip()
 
         user_prompt = (
             f"Context:\n{context_str}\n\n" f"Question: {question}\n\n" "Answer:"

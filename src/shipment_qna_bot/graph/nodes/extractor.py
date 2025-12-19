@@ -12,13 +12,12 @@ def extractor_node(state: GraphState) -> GraphState:
     text = state.get("normalized_question", "")
 
     # Regex patterns (simplified for demo)
-    # Container: 4 letters + 7 digits (e.g., ABCD1234567)
-    # Container: 4 letters + 7 digits (e.g., ABCD1234567)
+    # Container: 4 letters + 7 digits (e.g., SEGU5935510)
     container_pattern = r"\b[a-zA-Z]{4}\d{7}\b"
-    # PO: Prefix PO + digits (e.g., PO12345) - illustrative
-    po_pattern = r"\bPO\d{5,10}\b"
-    # OBL: Prefix OBL + alphanumeric (e.g., OBLABCD123) - illustrative
-    obl_pattern = r"\bOBL[a-zA-Z0-9]{5,12}\b"
+    # PO: 10 digits OR Prefix PO + digits
+    po_pattern = r"\b(?:PO)?(\d{10})\b"
+    # OBL: Prefix OBL + alphanumeric (up to 20 chars)
+    obl_pattern = r"\b(?:OBL)?([a-zA-Z0-9]{5,20})\b"
 
     containers = [c.upper() for c in re.findall(container_pattern, text)]
     pos = [p.upper() for p in re.findall(po_pattern, text, re.IGNORECASE)]
