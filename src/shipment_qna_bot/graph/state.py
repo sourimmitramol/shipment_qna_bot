@@ -56,6 +56,11 @@ class GraphState(TypedDict):
     is_satisfied: bool
     reflection_feedback: Optional[str]
 
+    # --- Metrics ---
+    usage_metadata: Dict[
+        str, Any
+    ]  # {prompt_tokens: int, completion_tokens: int, cost_usd: float}
+
     # --- Errors/Notices ---
     errors: Annotated[List[str], add]
     notices: Annotated[List[str], add]

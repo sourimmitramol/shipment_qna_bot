@@ -224,6 +224,10 @@
                         style="font-family: monospace; font-size: 0.8rem; color: #888; overflow: hidden; text-overflow: ellipsis;">
                     </div>
                 </div>
+                <div class="sidebar-section" style="margin-top: auto;">
+                    <button id="download-btn" style="width: 100%; border-radius: 5px; font-size: 0.85rem;">Download Interview</button>
+                    <small style="color: #888; font-size: 0.7rem; text-align: center; display: block; margin-top: 5px;">Saves as .txt</small>
+                </div>
             </aside>
 
             <main id="chat-window">
@@ -252,24 +256,41 @@
         const typingIndicator = document.getElementById('typing-indicator');
         const sendBtn = document.getElementById('send-btn');
         const sessionDisplay = document.getElementById('session-display');
+        const downloadBtn = document.getElementById('download-btn');
+
+        // History for download
+        let chatHistory = [{ role: 'bot', text: 'Hello! I can help you track shipments and answer questions. Try asking about specific containers.', timestamp: new Date().toISOString() }];
 
         // Simple conversation ID for demo (session storage)
         let conversationId = sessionStorage.getItem('convId') || 'web-' + Date.now();
         sessionStorage.setItem('convId', conversationId);
         sessionDisplay.textContent = conversationId;
 
-        function addMessage(text, role) {
+        function addMessage(text, role, metadata = null) {
             const div = document.createElement('div');
             div.className = `message ${role}`;
 
             if (role === 'bot') {
                 div.innerHTML = marked.parse(text);
+                if (metadata) {
+                    const metaDiv = document.createElement('div');
+                    metaDiv.style.fontSize = '0.7rem';
+                    metaDiv.style.marginTop = '8px';
+                    metaDiv.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+                    metaDiv.style.paddingTop = '5px';
+                    metaDiv.style.color = '#aaa';
+                    metaDiv.textContent = `Tokens: ${metadata.tokens} | Cost: $${metadata.cost_usd.toFixed(4)} | Time: ${metadata.latency_ms}ms`;
+                    div.appendChild(metaDiv);
+                }
             } else {
                 div.textContent = text;
             }
 
             chatContainer.appendChild(div);
             chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            // Save to history
+            chatHistory.push({ role, text, metadata, timestamp: new Date().toISOString() });
         }
 
         async function sendMessage(e) {
@@ -307,7 +328,7 @@
                 const data = await response.json();
 
                 if (data.answer) {
-                    addMessage(data.answer, 'bot');
+                    addMessage(data.answer, 'bot', data.metadata);
                 } else {
                     addMessage("Sorry, I encountered an error.", 'bot');
                 }
@@ -323,7 +344,30 @@
             }
         }
 
+        function downloadChat() {
+            let content = `Shipment Q&A Bot Chat Log\nSession ID: ${conversationId}\nExported: ${new Date().toLocaleString()}\n\n`;
+            
+            chatHistory.forEach(msg => {
+                content += `[${new Date(msg.timestamp).toLocaleTimeString()}] ${msg.role.toUpperCase()}:\n${msg.text}\n`;
+                if (msg.metadata) {
+                    content += `Metrics: Tokens=${msg.metadata.tokens}, Cost=$${msg.metadata.cost_usd.toFixed(6)}, Latency=${msg.metadata.latency_ms}ms\n`;
+                }
+                content += `\n${'-'.repeat(40)}\n\n`;
+            });
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat_log_${conversationId}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         form.addEventListener('submit', sendMessage);
+        downloadBtn.addEventListener('click', downloadChat);
     </script>
 </body>
 

@@ -80,9 +80,16 @@ class EvidenceItem(BaseModel):
     field_used: Optional[List[str]] = None
 
 
+class ResponseMetadata(BaseModel):
+    tokens: int
+    cost_usd: float
+    latency_ms: int
+
+
 class ChatAnswer(BaseModel):
     conversation_id: str
     intent: Optional[str] = None
     answer: str
     notices: Optional[List[str]] = None
     evidence: Optional[List[EvidenceItem]] = None
+    metadata: Optional[ResponseMetadata] = None

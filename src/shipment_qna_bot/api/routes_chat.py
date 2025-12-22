@@ -55,39 +55,57 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     # Placeholder logic for processing the chat request
     # In a production implementation, this would involve NLP processing, database queries, etc.
 
+    import time
+
+    start_time = time.time()
+
     # run graph
     result = run_graph(
         {
             "conversation_id": conversation_id,
             "question_raw": payload.question,
             "consignee_codes": payload.consignee_codes,
+            "usage_metadata": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
         }
     )
 
+    end_time = time.time()
+    latency_ms = int((end_time - start_time) * 1000)
+
+    # Calculate costs
+    usage = result.get("usage_metadata") or {}
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    total_tokens = usage.get("total_tokens", 0)
+
+    # GPT-4o pricing (approximate)
+    cost_usd = (prompt_tokens * 0.000005) + (completion_tokens * 0.000015)
+
     # sync intent into logs + middleware response
-    # update log context with the determined intent so subsequent logs (like the response log) show it
-    # set_log_context(intent=result.get("intent", "-"))
     final_intent = result.get("intent", "-")
     request.state.intent = final_intent
     set_log_context(intent=final_intent)
 
     answer_text = result.get("answer_text", "-")
-    # request.state.answer_text = answer_text
-    # set_log_context(answer_text=answer_text)
 
     logger.info(
-        f"Responding with answer: {answer_text}",
+        f"Responding with answer: {answer_text[:100]}... | Tokens: {total_tokens} | Cost: ${cost_usd:.4f} | Latency: {latency_ms}ms",
         extra={"step": "API:/chat"},
     )
 
-    # convert evidence if we have it; placeholder empty list for now
+    # convert evidence
     evidence_items = []
     for ev in result.get("evidence", []) or []:
         try:
             evidence_items.append(EvidenceItem(**ev))
         except Exception:
-            # keep response stable even if evidence item malformed during early dev
             continue
+
+    from shipment_qna_bot.models.schemas import ResponseMetadata
 
     response = ChatAnswer(
         conversation_id=conversation_id,
@@ -95,6 +113,11 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         answer=answer_text,
         notices=result.get("notices", []),
         evidence=evidence_items,
+        metadata=ResponseMetadata(
+            tokens=total_tokens,
+            cost_usd=round(cost_usd, 6),
+            latency_ms=latency_ms,
+        ),
     )
 
     return response

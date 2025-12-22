@@ -31,6 +31,11 @@ async def run_turn(thread_id, question, consignee_codes):
         answer = final_state.get("answer_text")
         print(f"\n<<< BOT: {answer}")
 
+        # Log if metrics are present
+        usage = final_state.get("usage_metadata")
+        if usage:
+            print(f"Metrics: {usage}")
+
         # Log if loop happened
         retry_count = final_state.get("retry_count", 0)
         if retry_count > 0:

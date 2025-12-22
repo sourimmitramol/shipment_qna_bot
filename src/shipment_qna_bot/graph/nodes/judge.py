@@ -93,7 +93,19 @@ Output MUST be a JSON object:
 
         try:
             chat_tool = _get_chat_tool()
-            response_text = chat_tool.chat_completion(llm_messages)
+            response = chat_tool.chat_completion(llm_messages)
+            response_text = response["content"]
+            usage = response["usage"]
+
+            # Accumulate usage
+            usage_metadata = state.get("usage_metadata") or {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
+            for k in usage:
+                usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
+            state["usage_metadata"] = usage_metadata
 
             # Extract JSON
             try:

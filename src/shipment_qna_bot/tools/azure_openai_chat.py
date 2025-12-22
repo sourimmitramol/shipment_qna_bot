@@ -49,9 +49,10 @@ class AzureOpenAIChatTool:
         messages: List[Dict[str, str]],
         temperature: float = 0.0,
         max_tokens: int = 800,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Generates a chat completion using the Azure OpenAI client.
+        Returns a dict with 'content' and 'usage'.
         """
         try:
             response = self.client.chat.completions.create(
@@ -60,6 +61,13 @@ class AzureOpenAIChatTool:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            return response.choices[0].message.content or ""
+            return {
+                "content": response.choices[0].message.content or "",
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                },
+            }
         except Exception as e:
             raise RuntimeError(f"Azure OpenAI Chat Completion failed: {e}")

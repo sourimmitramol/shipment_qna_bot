@@ -103,6 +103,12 @@ def run_graph(input_state: dict) -> dict:
         input_state["max_retries"] = 3
     if "is_satisfied" not in input_state:
         input_state["is_satisfied"] = False
+    if "usage_metadata" not in input_state:
+        input_state["usage_metadata"] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
 
     # Convert question_raw to a message for history persistence
     from langchain_core.messages import HumanMessage

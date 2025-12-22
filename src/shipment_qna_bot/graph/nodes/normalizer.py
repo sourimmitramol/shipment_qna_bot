@@ -56,9 +56,19 @@ Guidelines:
 
     try:
         chat_tool = _get_chat_tool()
-        standalone_question = chat_tool.chat_completion(
-            llm_messages, temperature=0.0
-        ).strip()
+        response = chat_tool.chat_completion(llm_messages, temperature=0.0)
+        standalone_question = response["content"].strip()
+        usage = response["usage"]
+
+        # Accumulate usage
+        usage_metadata = state.get("usage_metadata") or {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        for k in usage:
+            usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
+
         normalized = standalone_question.lower()
 
         logger.info(
@@ -68,5 +78,6 @@ Guidelines:
     except Exception as e:
         logger.warning(f"Co-reference resolution failed: {e}")
         normalized = question.lower()
+        usage_metadata = state.get("usage_metadata")
 
-    return {"normalized_question": normalized}
+    return {"normalized_question": normalized, "usage_metadata": usage_metadata}

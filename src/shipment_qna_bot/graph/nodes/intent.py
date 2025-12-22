@@ -37,16 +37,29 @@ def intent_node(state: GraphState) -> GraphState:
 
     try:
         chat_tool = _get_chat_tool()
-        intent = chat_tool.chat_completion(messages, temperature=0.0).strip().lower()
+        response = chat_tool.chat_completion(messages, temperature=0.0)
+        intent = response["content"].strip().lower()
+        usage = response["usage"]
+
+        # Accumulate usage
+        usage_metadata = state.get("usage_metadata") or {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        for k in usage:
+            usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
 
         # Valid intents: retrieval, analytics, greeting, end
         valid_intents = ["retrieval", "analytics", "greeting", "end"]
         if intent not in valid_intents:
-            # Fallback for shipment-like content
             intent = "retrieval"
     except Exception as e:
         logger.error(f"Intent classification failed: {e}")
-        intent = "retrieval"  # Safe fallback
+        intent = "retrieval"
+        usage_metadata = state.get("usage_metadata")
+
+    return {"intent": intent, "usage_metadata": usage_metadata}
 
     logger.info(
         f"Classified intent: {intent}",

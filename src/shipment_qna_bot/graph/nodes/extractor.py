@@ -52,11 +52,23 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ]
 
     llm_extracted = {}
+    usage_metadata = state.get("usage_metadata") or {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
     try:
         chat = _get_chat_tool()
         import json
 
-        res = chat.chat_completion(messages, temperature=0.0)
+        response = chat.chat_completion(messages, temperature=0.0)
+        res = response["content"]
+        usage = response["usage"]
+
+        # Accumulate usage
+        for k in usage:
+            usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
+
         # Find JSON block in response
         json_match = re.search(r"\{.*\}", res, re.DOTALL)
         if json_match:
@@ -81,4 +93,4 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
         f"Extracted {count} entities", extra={"extra_data": {"extracted": merged}}
     )
 
-    return {"extracted_ids": merged}
+    return {"extracted_ids": merged, "usage_metadata": usage_metadata}
