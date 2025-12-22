@@ -7,8 +7,9 @@ from fastapi import APIRouter, Request
 
 from shipment_qna_bot.graph.builder import run_graph
 from shipment_qna_bot.logging.logger import logger, set_log_context
-from shipment_qna_bot.models.schemas import (ChatAnswer, ChatRequest,
-                                             EvidenceItem)
+from shipment_qna_bot.models.schemas import (ChartSpec, ChatAnswer,
+                                             ChatRequest, EvidenceItem)
+from shipment_qna_bot.security.scope import resolve_allowed_scope
 
 router = APIRouter(tags=["chat"], prefix="/api")
 
@@ -17,21 +18,44 @@ router = APIRouter(tags=["chat"], prefix="/api")
 async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     """
     Main `chat` endpoint to handle chat requests related to shipment queries.
-    For now:
-        - sets logging context (conversation_id, consignee_codes)
-        - logs basic request info
-        - returns stub response
-    Later we can switch or add new context:
-        - will call LangGraph runner with this payload
+
+    Responsibilities (current stage):
+    - Ensure we always have a conversation_id (for session/memory).
+    - Normalize and log consignee codes coming from the payload.
+    - Derive an *effective* consignee scope via `resolve_allowed_scope` (RLS plumbing hook).
+    - Set structured logging context (conversation_id, consignee scope, intent).
+    - Call the LangGraph runner with a clean initial state.
+    - Map graph result into the public `ChatAnswer` schema, including
+      evidence items and (optionally, in future) chart/table data.
     """
 
+    # 1) Conversation/session handling
     # ensure payload always have convesation_id and its always has a value associated with it
-    # server generates conversation id if missing
+    # server generates conversation id if missing, generate a new one.
     conversation_id = payload.conversation_id or str(uuid.uuid4())
 
     # store in request.state so middleware can use it for RESPONSE logs
     request.state.conversation_id = conversation_id
+
+    # 2) Derive effective consignee scope (RLS plumbing)
+    # Raw codes from payload are already normalized by ChatRequest validator.
+    raw_consignee_codes: List[str] = payload.consignee_codes
+
+    # In a real deployment, this would come from auth/token/headers.
+    # For now, we treat it as optional and let `resolve_allowed_scope`
+    # behave as a pure normalizer, but wiring is in place for future RLS.
+    user_identity = request.headers.get("X-User-Identity")
+
+    allowed_consignee_codes = resolve_allowed_scope(
+        user_identity=user_identity,
+        payload_codes=raw_consignee_codes,
+    )
+
+    # Make the effective scope visible to middleware logging.
+    # This is what we actually use for tools/RLS, not the raw payload.
+    # Raw codes from payload are already normalized by ChatRequest validator.
     request.state.consignee_codes = payload.consignee_codes
+    # ===========
     logger.info(
         f"Normalized consignee_codes(type={type(payload.consignee_codes)}): {payload.consignee_codes}",
         extra={"step": "API:/chat"},
