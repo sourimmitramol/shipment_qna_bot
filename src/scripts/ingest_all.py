@@ -46,6 +46,7 @@ def robust_upload(tool, docs, batch_size=100, max_retries=3):
 
 
 def ingest_all():
+    start_time = time.perf_counter()
     data_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "data")
     )
@@ -102,6 +103,10 @@ def ingest_all():
         else:
             print(f"No documents to upload for {file_name}")
 
+    end_time = time.perf_counter()
+    delta = end_time - start_time
+
+    print(f"Total time taken: {timedelta(seconds=round(delta))}")
     print("\n--- All ingestions complete! ---")
 
 
