@@ -61,10 +61,17 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         
         {logistics_context}
 
+        Pagination & Sorting:
+        - "next 10", "page 2" -> use "skip": 10 (or appropriate offset)
+        - "current data", "latest", "recent" -> use "order_by": "optimal_eta_fd_date desc"
+        - Default sorting is by relevance (null).
+
         Output JSON only:
         {{
             "query_text": "text for hybrid search",
             "extra_filter": "OData filter string or null",
+            "skip": 0,
+            "order_by": "optimal_eta_fd_date desc" or null,
             "reason": "short explanation"
         }}
         """
@@ -107,9 +114,11 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # Construct final plan
         plan: RetrievalPlan = {
             "query_text": plan_data.get("query_text") or q,
-            "top_k": 8,
+            "top_k": 10,  # Default to 10 as requested
             "vector_k": 30,
             "extra_filter": plan_data.get("extra_filter"),
+            "skip": plan_data.get("skip"),
+            "order_by": plan_data.get("order_by"),
             "reason": plan_data.get("reason", "fallback"),
         }
 

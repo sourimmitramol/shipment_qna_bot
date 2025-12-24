@@ -58,6 +58,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     "container_number",
                     "shipment_status",
                     "po_numbers",
+                    "obl_nos",
                 ]
                 for f in priority_fields:
                     if f in hit:
@@ -77,11 +78,20 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                             if (
                                 k not in priority_fields
                                 and k != "milestones"
+                                and k
+                                not in [
+                                    "consignee_code_ids",
+                                    "id",
+                                ]  # Filter sensitive fields
                                 and len(str(v)) < 200
                             ):
                                 context_str += f"{k}: {v}\n"
                     except:
                         pass
+
+        # Pagination Hint
+        if hits and len(hits) == 10:  # Assuming default top_k=10
+            context_str += "\nNOTE: There are more results. The user can ask 'next 10' to see them.\n"
 
         # If no info at all
         if not hits and not analytics:
@@ -100,7 +110,7 @@ Analyze the provided shipment data to answer user questions accurately.
 
 Logistics Concepts:
 - Status vs Milestone: "Current Status" is often the 'shipment_status' field. "Last Milestone" is the final entry in the milestones list.
-- Hot PO/Container: Usually indicated by 'hot_container' boolean or a specific status tag.
+- Hot PO/Container: Usually indicated by 'hot_container_flag' boolean or a specific status tag.
 - ETA DP: Estimated Time of Arrival at Discharge Port.
 - ETA FD: Estimated Time of Arrival at Final Destination.
 
@@ -112,7 +122,7 @@ Result Guidelines:
 Output Format:
 a. Direct Answer
 b. Summary & Methodology (Explain which identifiers or filters you found)
-c. Data Preview (max 5 rows)
+c. Data Preview (max 10 rows)
 """.strip()
 
         user_prompt = (

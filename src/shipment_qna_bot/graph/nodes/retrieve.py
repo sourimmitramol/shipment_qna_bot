@@ -91,6 +91,8 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 vector_k=int(plan.get("vector_k", 30)),
                 extra_filter=extra_filter,
                 include_total_count=plan.get("include_total_count", False),
+                skip=plan.get("skip"),
+                order_by=plan.get("order_by"),
             )
             hits = search_response["hits"]
             state["hits"] = hits
