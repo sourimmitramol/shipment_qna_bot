@@ -15,6 +15,9 @@ def _get_chat_tool() -> AzureOpenAIChatTool:
     return _CHAT_TOOL
 
 
+from datetime import datetime
+
+
 def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Synthesizes a natural language answer from retrieved documents using LLM.
@@ -92,6 +95,12 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # Pagination Hint
         if hits and len(hits) == 10:  # Assuming default top_k=10
             context_str += "\nNOTE: There are more results. The user can ask 'next 10' to see them.\n"
+
+        # 3. Add Current Date Context
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        context_str += (
+            f"\n--- System Information ---\nCurrent Date (UTC): {today_str}\n"
+        )
 
         # If no info at all
         if not hits and not analytics:

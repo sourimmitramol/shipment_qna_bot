@@ -83,6 +83,8 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         
         Date Filtering (Relative Dates):
         - Use optimal_eta_fd_date for future/past day checks.
+        - Example: If the user asks for shipments arriving on 2025-12-29, use:
+          "extra_filter": "optimal_eta_fd_date ge 2025-12-29T00:00:00Z and optimal_eta_fd_date lt 2025-12-30T00:00:00Z"
         
         Pagination & Sorting:
         - "next 10" -> set "skip".
@@ -147,10 +149,8 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                         )
 
                 # Second pass: Get final answer with tool result
-                # Force the model to generate text (the plan) instead of calling tools again
-                response = chat.chat_completion(
-                    messages, temperature=0.0, tool_choice="none"
-                )
+                # Omit tool_choice to avoid current API issues and ensure model generates the plan
+                response = chat.chat_completion(messages, temperature=0.0, tools=None)
 
             res = response["content"]
             usage = response["usage"]
