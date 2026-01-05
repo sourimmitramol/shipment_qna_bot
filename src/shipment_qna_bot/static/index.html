@@ -202,13 +202,72 @@
             margin-left: 20px;
             display: none;
         }
+
+        /* Table and Pagination Styles */
+        .table-wrapper {
+            margin-top: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .data-table th {
+            background: rgba(255, 255, 255, 0.1);
+            text-align: left;
+            padding: 10px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .data-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .data-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            font-size: 0.8rem;
+        }
+
+        .page-btn {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .page-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .page-info {
+            color: #aaa;
+        }
     </style>
 </head>
 
 <body>
     <div id="app">
         <header>
-            <h1>Shipment Q&A Bot </h1>
+            <h1>Shipment Q&A Bot</h1>
         </header>
 
         <div id="main-container">
@@ -266,12 +325,20 @@
         sessionStorage.setItem('convId', conversationId);
         sessionDisplay.textContent = conversationId;
 
-        function addMessage(text, role, metadata = null) {
+        function addMessage(text, role, metadata = null, table = null) {
             const div = document.createElement('div');
             div.className = `message ${role}`;
 
             if (role === 'bot') {
-                div.innerHTML = marked.parse(text);
+                const contentDiv = document.createElement('div');
+                contentDiv.innerHTML = marked.parse(text);
+                div.appendChild(contentDiv);
+
+                if (table && table.rows && table.rows.length > 0) {
+                    const tableEl = renderTable(table);
+                    div.appendChild(tableEl);
+                }
+
                 if (metadata) {
                     const metaDiv = document.createElement('div');
                     metaDiv.style.fontSize = '0.7rem';
@@ -287,10 +354,96 @@
             }
 
             chatContainer.appendChild(div);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            scrollToBottom();
 
             // Save to history
             chatHistory.push({ role, text, metadata, timestamp: new Date().toISOString() });
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function renderTable(tableData) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'table-wrapper';
+
+            const table = document.createElement('table');
+            table.className = 'data-table';
+
+            // Header
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            tableData.columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Body
+            const tbody = document.createElement('tbody');
+            tableData.rows.forEach(row => {
+                const tr = document.createElement('tr');
+                tableData.columns.forEach(col => {
+                    const td = document.createElement('td');
+                    td.textContent = row[col] !== undefined ? row[col] : '-';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            wrapper.appendChild(table);
+
+            // Pagination logic
+            const pageSize = 10;
+            const totalRows = tableData.rows.length;
+            if (totalRows > pageSize) {
+                let currentPage = 0;
+                const totalPages = Math.ceil(totalRows / pageSize);
+
+                const pagination = document.createElement('div');
+                pagination.className = 'pagination';
+
+                const prevBtn = document.createElement('button');
+                prevBtn.className = 'page-btn';
+                prevBtn.textContent = 'Prev';
+                prevBtn.disabled = true;
+
+                const pageInfo = document.createElement('span');
+                pageInfo.className = 'page-info';
+                pageInfo.textContent = `Page 1 of ${totalPages}`;
+
+                const nextBtn = document.createElement('button');
+                nextBtn.className = 'page-btn';
+                nextBtn.textContent = 'Next';
+
+                function updatePage() {
+                    const start = currentPage * pageSize;
+                    const end = start + pageSize;
+                    Array.from(tbody.rows).forEach((tr, i) => {
+                        tr.style.display = (i >= start && i < end) ? '' : 'none';
+                    });
+                    pageInfo.textContent = `Page ${currentPage + 1} of ${totalPages}`;
+                    prevBtn.disabled = currentPage === 0;
+                    nextBtn.disabled = currentPage === totalPages - 1;
+                    scrollToBottom();
+                }
+
+                prevBtn.onclick = () => { if (currentPage > 0) { currentPage--; updatePage(); } };
+                nextBtn.onclick = () => { if (currentPage < totalPages - 1) { currentPage++; updatePage(); } };
+
+                pagination.appendChild(prevBtn);
+                pagination.appendChild(pageInfo);
+                pagination.appendChild(nextBtn);
+                wrapper.appendChild(pagination);
+
+                // Initial show
+                updatePage();
+            }
+
+            return wrapper;
         }
 
         async function sendMessage(e) {
@@ -328,7 +481,7 @@
                 const data = await response.json();
 
                 if (data.answer) {
-                    addMessage(data.answer, 'bot', data.metadata);
+                    addMessage(data.answer, 'bot', data.metadata, data.table);
                 } else {
                     addMessage("Sorry, I encountered an error.", 'bot');
                 }

@@ -54,6 +54,7 @@ class GraphState(TypedDict):
     answer_text: Optional[str]  # aligned with nodes
     citations: List[Dict[str, Any]]
     chart_spec: Optional[Dict[str, Any]]
+    table_spec: Optional[Dict[str, Any]]
 
     # --- Control Flow ---
     retry_count: int

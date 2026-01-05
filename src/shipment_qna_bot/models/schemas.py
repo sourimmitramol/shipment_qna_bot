@@ -164,6 +164,25 @@ class ChartSpec(BaseModel):
     )
 
 
+class TableSpec(BaseModel):
+    """
+    Optional table specification for analytics-style questions.
+    """
+
+    columns: List[str] = Field(
+        ...,
+        description="List of column names/headers.",
+    )
+    rows: List[Dict[str, Any]] = Field(
+        ...,
+        description="List of data rows; each item is a dict matching columns.",
+    )
+    title: Optional[str] = Field(
+        None,
+        description="Optional title for the table.",
+    )
+
+
 class ResponseMetadata(BaseModel):
     tokens: int
     cost_usd: float
@@ -228,11 +247,11 @@ class ChatAnswer(BaseModel):
             "path (e.g. hot vs normal containers, delay buckets)."
         ),
     )
-    table: Optional[List[Dict[str, Any]]] = Field(
+    table: Optional[TableSpec] = Field(
         default=None,
         description=(
-            "Optional tabular data (list of row dicts) used to support the answer "
-            "or drive visualizations. Columns are implicit from dict keys."
+            "Optional tabular data used to support the answer "
+            "or drive visualizations."
         ),
     )
     metadata: Optional[ResponseMetadata] = None

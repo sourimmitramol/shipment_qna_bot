@@ -201,6 +201,31 @@ c. Pagination Button (if applicable)
 
             state["answer_text"] = response_text
 
+            # --- Structured Table Construction ---
+            if hits and len(hits) > 1:
+                cols = [
+                    "container_number",
+                    "shipment_status",
+                    "po_numbers",
+                    "booking_numbers",
+                    "eta_dp_date",
+                ]
+                rows = []
+                for h in hits:
+                    row = {}
+                    for c in cols:
+                        val = h.get(c)
+                        if isinstance(val, list):
+                            val = ", ".join(map(str, val))
+                        row[c] = val
+                    rows.append(row)
+
+                state["table_spec"] = {
+                    "columns": cols,
+                    "rows": rows,
+                    "title": "Shipment List",
+                }
+
             # In LangGraph with add_messages, we return the NEW message to be appended.
             # If we already have history, we might want to avoid bloating it with failed attempts?
             # For now, just append the new one.
