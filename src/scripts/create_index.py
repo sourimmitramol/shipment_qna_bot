@@ -32,7 +32,7 @@ def create_index():
     cred = AzureKeyCredential(api_key) if api_key else DefaultAzureCredential()
     client = SearchIndexClient(endpoint=endpoint, credential=cred)
 
-    # Define the fields
+    # 1. Define the fields (Including shipment_status to prevent Planner errors)
     fields = [
         SimpleField(
             name="document_id",
@@ -40,7 +40,11 @@ def create_index():
             key=True,
             filterable=True,
         ),
-        SearchField(name="content", type=SearchFieldDataType.String, searchable=True),
+        SearchField(
+            name="content",
+            type=SearchFieldDataType.String,
+            searchable=True,
+        ),
         # Vector field for hybrid search
         SearchField(
             name="content_vector",
@@ -54,6 +58,7 @@ def create_index():
             name="consignee_code_ids",
             type=SearchFieldDataType.Collection(SearchFieldDataType.String),
             filterable=True,
+            facetable=True,
         ),
         # Lookup Fields
         SearchField(
@@ -61,6 +66,7 @@ def create_index():
             type=SearchFieldDataType.String,
             searchable=True,
             filterable=True,
+            sortable=True,
         ),
         SearchField(
             name="po_numbers",
@@ -80,11 +86,13 @@ def create_index():
             searchable=True,
             filterable=True,
         ),
-        SimpleField(
-            name="hot_container_flag",
-            type=SearchFieldDataType.Boolean,
+        # Status Field (CRITICAL: Added this to fix the 'shipment_status' missing error)
+        SearchField(
+            name="shipment_status",
+            type=SearchFieldDataType.String,
+            searchable=True,
             filterable=True,
-            sortable=True,
+            facetable=True,
         ),
         # Date Fields
         SearchField(
@@ -94,7 +102,13 @@ def create_index():
             sortable=True,
         ),
         SearchField(
-            name="eta_fd_date",
+            name="optimal_ata_dp_date",
+            type=SearchFieldDataType.DateTimeOffset,
+            filterable=True,
+            sortable=True,
+        ),
+        SearchField(
+            name="optimal_eta_fd_date",
             type=SearchFieldDataType.DateTimeOffset,
             filterable=True,
             sortable=True,
@@ -108,7 +122,7 @@ def create_index():
         ),
     ]
 
-    # Configure vector search
+    # 2. Configure vector search
     vector_search = VectorSearch(
         algorithms=[
             HnswAlgorithmConfiguration(name="my-hnsw"),
@@ -120,26 +134,36 @@ def create_index():
         ],
     )
 
-    # Configure scoring profiles
+    # 3. Configure Scoring Profiles (From your JSON)
     scoring_profiles = [
         ScoringProfile(
-            name="logistics-score",
-            text_weights=TextWeights(weights={"content": 2.5}),
+            name="shipment-score-conf",
+            text_weights=TextWeights(
+                weights={"container_number": 3.0, "po_numbers": 2.0, "obl_nos": 1.0}
+            ),
         )
     ]
 
-    # Configure semantic search
+    # 4. Configure Semantic Search
     semantic_search = SemanticSearch(
         configurations=[
             SemanticConfiguration(
-                name="default",
+                name="shipment-semantic-conf",
                 prioritized_fields=SemanticPrioritizedFields(
+                    title_field=SemanticField(field_name="consignee_code_ids"),
                     content_fields=[SemanticField(field_name="content")],
+                    keywords_fields=[
+                        SemanticField(field_name="container_number"),
+                        SemanticField(field_name="po_numbers"),
+                        SemanticField(field_name="obl_nos"),
+                        SemanticField(field_name="shipment_status"),
+                    ],
                 ),
             )
         ]
     )
 
+    # 5. Create the index
     index = SearchIndex(
         name=index_name,
         fields=fields,
@@ -147,13 +171,6 @@ def create_index():
         scoring_profiles=scoring_profiles,
         semantic_search=semantic_search,
     )
-
-    print(f"Deleting index '{index_name}' if it exists...")
-    try:
-        client.delete_index(index_name)
-        print(f"Index '{index_name}' deleted.")
-    except Exception as e:
-        print(f"Index '{index_name}' not found or could not be deleted: {e}")
 
     print(f"Creating index '{index_name}'...")
     try:

@@ -107,7 +107,7 @@ def ingest_all():
     end_time = time.perf_counter()
     delta = end_time - start_time
 
-    print(f"Total time taken: {timedelta(seconds=round(delta))}")
+    print(f"Total time taken: {timedelta(seconds=delta)}")
     print("\n--- All ingestions complete! ---")
 
 

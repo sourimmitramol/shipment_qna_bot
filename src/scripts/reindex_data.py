@@ -73,11 +73,12 @@ def flatten_document(
         "consignee_code_ids": to_list(consignee_codes),
         "container_number": metadata.get("container_number"),
         "po_numbers": to_list(metadata.get("po_numbers", [])),
-        "obl_nos": to_list(metadata.get("ocean_bl_numbers", [])),
+        "obl_nos": to_list(metadata.get("obl_nos", [])),
         "booking_numbers": to_list(metadata.get("booking_numbers", [])),
-        "hot_container_flag": bool(
-            metadata.get("hot_container", metadata.get("hot_container_flag", False))
-        ),
+        "shipment_status": metadata.get("shipment_status"),
+        "eta_dp_date": metadata.get("eta_dp_date"),
+        "optimal_ata_dp_date": metadata.get("optimal_ata_dp_date"),
+        "optimal_eta_fd_date": metadata.get("optimal_eta_fd_date"),
         # Metadata JSON blob
         "metadata_json": json.dumps(metadata),
     }
