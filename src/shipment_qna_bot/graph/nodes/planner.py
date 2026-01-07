@@ -7,14 +7,14 @@ from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 
-_CHAT_TOOL = None
+_chat_tool: AzureOpenAIChatTool | None = None
 
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
-    global _CHAT_TOOL
-    if _CHAT_TOOL is None:
-        _CHAT_TOOL = AzureOpenAIChatTool()
-    return _CHAT_TOOL
+    global _chat_tool
+    if _chat_tool is None:
+        _chat_tool = AzureOpenAIChatTool()
+    return _chat_tool
 
 
 def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:

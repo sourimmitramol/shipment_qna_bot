@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from shipment_qna_bot.graph.state import RetrievalPlan
+from shipment_qna_bot.graph.state import RetrievalPlan  # type: ignore
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
@@ -103,14 +103,14 @@ def _sync_ctx(state: Dict[str, Any]) -> None:
 def _get_search() -> AzureAISearchTool:
     global _SEARCH
     if _SEARCH is None:
-        _SEARCH = AzureAISearchTool()
+        _SEARCH = AzureAISearchTool()  # type: ignore
     return _SEARCH
 
 
 def _get_embedder() -> AzureOpenAIEmbeddingsClient:
     global _EMBED
     if _EMBED is None:
-        _EMBED = AzureOpenAIEmbeddingsClient()
+        _EMBED = AzureOpenAIEmbeddingsClient()  # type: ignore
     return _EMBED
 
 
@@ -127,18 +127,18 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
         {
             "intent": state.get("intent", "-"),
             "consignee_codes": state.get("consignee_codes", []),
-            "query_text": ((state.get("retrieval_plan") or {}).get("query_text") or "")[
+            "query_text": ((state.get("retrieval_plan") or {}).get("query_text") or "")[  # type: ignore
                 :120
             ],
         },
     ):
-        plan = state.get("retrieval_plan") or {}
-        consignee_codes = state.get("consignee_codes") or []
-        query_text = (
-            plan.get("query_text") or state.get("normalized_question") or ""
-        ).strip()
-        extra_filter = (plan.get("extra_filter") or "").strip() or None
-        if extra_filter and not _is_filter_safe(extra_filter):
+        plan = state.get("retrieval_plan") or {}  # type: ignore
+        consignee_codes = state.get("consignee_codes") or []  # type: ignore
+        query_text = (  # type: ignore
+            plan.get("query_text") or state.get("normalized_question") or ""  # type: ignore
+        ).strip()  # type: ignore
+        extra_filter = (plan.get("extra_filter") or "").strip() or None  # type: ignore
+        if extra_filter and not _is_filter_safe(extra_filter):  # type: ignore
             logger.warning(
                 f"Dropping unsafe filter: {extra_filter}",
                 extra={"step": "NODE:Retriever"},
@@ -155,7 +155,7 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             embedder = _get_embedder()
-            vector = embedder.embed_query(query_text)
+            vector = embedder.embed_query(query_text)  # type: ignore
         except Exception as e:
             # if embeddings fail, use semantic search with BM25-only.
             logger.warning(
@@ -179,7 +179,7 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
         def _load_metadata(hit: Dict[str, Any]) -> Dict[str, Any]:
             raw = hit.get("metadata_json")
             if isinstance(raw, dict):
-                return raw
+                return raw  # type: ignore
             if isinstance(raw, str):
                 try:
                     return json.loads(raw)

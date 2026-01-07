@@ -1,19 +1,19 @@
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 
-_CHAT_TOOL = None
+_chat_tool: Optional[AzureOpenAIChatTool] = None
 
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
-    global _CHAT_TOOL
-    if _CHAT_TOOL is None:
-        _CHAT_TOOL = AzureOpenAIChatTool()
-    return _CHAT_TOOL
+    global _chat_tool
+    if _chat_tool is None:
+        _chat_tool = AzureOpenAIChatTool()
+    return _chat_tool
 
 
 def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -33,8 +33,8 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "hits_count": len(state.get("hits") or []),
         },
     ):
-        hits = state.get("hits") or []
-        analytics = state.get("idx_analytics") or {}
+        hits = cast(List[Dict[str, Any]], state.get("hits") or [])
+        analytics = cast(Dict[str, Any], state.get("idx_analytics") or {})
         question = state.get("question_raw") or ""
 
         # Context construction
@@ -78,7 +78,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 # Add metadata_json content intelligently
                 if "metadata_json" in hit:
                     try:
-                        m = json.loads(hit["metadata_json"])
+                        m = json.loads(str(hit["metadata_json"]))
                         # Extract milestones if present
                         if "milestones" in m:
                             context_str += (
@@ -175,20 +175,17 @@ c. Pagination Button (if applicable)
 
         # Add history
         # We want to include previous turns, but correctly handle the current turn's context
-        history = state.get("messages") or []
+        history = cast(List[Any], state.get("messages") or [])
 
         # If this is a retry, the last message in history is the previous (unsatisfactory) AIMessage
         # The one before it is the current HumanMessage
-
-        current_question_found = False
         for msg in history:
             if isinstance(msg, HumanMessage) and msg.content == question:
                 # This is the current question, we'll add it later with context
-                current_question_found = True
                 continue
 
-            role = "user" if msg.type == "human" else "assistant"
-            llm_messages.append({"role": role, "content": msg.content})
+            role = "user" if getattr(msg, "type", "") == "human" else "assistant"
+            llm_messages.append({"role": role, "content": str(msg.content)})
 
         # Add current user prompt with context
         llm_messages.append({"role": "user", "content": user_prompt})
@@ -252,7 +249,7 @@ c. Pagination Button (if applicable)
                     "booking_numbers",
                     "eta_dp_date",
                 ]
-                rows = []
+                rows: List[Dict[str, Any]] = []
                 for h in hits:
                     row = {}
                     for c in cols:
@@ -275,7 +272,7 @@ c. Pagination Button (if applicable)
                     state["answer_text"] = response_text
 
             # Evidence for response model
-            citations = []
+            citations: List[Dict[str, Any]] = []
             for h in hits[:5]:
                 citations.append(
                     {
