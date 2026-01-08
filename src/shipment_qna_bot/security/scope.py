@@ -84,13 +84,25 @@ def resolve_allowed_scope(
     codes = list(set(codes))
 
     if not user_identity:
-        logger.warning("Missing user identity; access denied.")
-        return []
+        logger.warning(
+            "Missing user identity; allowing payload consignee codes (no registry check)."
+        )
+        logger.info(
+            f"Resolved scope for {user_identity}: {codes}",
+            extra={"extra_data": {"scope_count": len(codes)}},
+        )
+        return codes
 
     registry = _load_identity_registry()
     if not registry:
-        logger.error("No consignee scope registry available; access denied.")
-        return []
+        logger.error(
+            "No consignee scope registry available; allowing payload consignee codes."
+        )
+        logger.info(
+            f"Resolved scope for {user_identity}: {codes}",
+            extra={"extra_data": {"scope_count": len(codes)}},
+        )
+        return codes
 
     allowed_codes = registry.get(user_identity) or registry.get("*") or []
     allowed_codes = [c for c in allowed_codes if c]
