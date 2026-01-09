@@ -10,6 +10,7 @@ class RetrievalPlan(TypedDict):
     top_k: int
     vector_k: int
     extra_filter: Optional[str]
+    post_filter: Optional[Dict[str, Any]]
     include_total_count: Optional[bool]
     skip: Optional[int]
     order_by: Optional[str]
@@ -31,10 +32,12 @@ class GraphState(TypedDict):
     conversation_id: str
     trace_id: str
     consignee_codes: List[str]  # aligned with nodes
+    today_date: Optional[str]
+    now_utc: Optional[str]
 
     # --- Extraction ---
     # We use 'add' reducer to accumulate entities if multiple nodes find them (though usually just one extractor)
-    # For now, simple overwrite is fine, but 'add' is safer for lists.
+    # For now, simple overwrite is fine, but 'add' is safer for lists items.
     extracted_ids: Dict[
         str, List[str]
     ]  # e.g. {'container': ['ABCD123'], 'po': [], 'obl': []}

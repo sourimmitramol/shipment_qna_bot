@@ -84,7 +84,7 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         """
 
         reflection_feedback = state.get("reflection_feedback")
-        retry_count = state.get("retry_count") or 0
+        retry_count = state.get("retry_count", 0)
 
         user_content = f"Question: {q}\nExtracted Entities: {json.dumps(extracted)}"
 
@@ -121,7 +121,7 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # Construct final plan
         plan: RetrievalPlan = {
             "query_text": plan_data.get("query_text") or q,
-            "top_k": plan_data.get("top_k") or 20,
+            "top_k": plan_data.get("top_k", 20),
             "vector_k": 30,
             "extra_filter": plan_data.get("extra_filter"),
             "post_filter": None,
@@ -174,28 +174,26 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         container_set = {c for c in containers if c}
         obl_set = {o for o in obl_nos if o}
-        
-        # Avoid category overlap to prevent 'and' collisions in filters
         if container_set:
             po_numbers = [p for p in po_numbers if p not in container_set]
             booking_numbers = [b for b in booking_numbers if b not in container_set]
             obl_nos = [o for o in obl_nos if o not in container_set]
-        
-        # If an ID is both a PO and a Booking, we should search both in an 'OR' block
-        # to ensure we find it regardless of which field it's actually in.
-        shared_ids = set(po_numbers) & set(booking_numbers)
-        if shared_ids:
-            po_numbers = [p for p in po_numbers if p not in shared_ids]
-            booking_numbers = [b for b in booking_numbers if b not in shared_ids]
+        if obl_set:
+            po_numbers = [p for p in po_numbers if p not in obl_set]
+            booking_numbers = [b for b in booking_numbers if b not in obl_set]
 
         # Booster: if we have specific IDs, make sure they are in query_text
-        all_ids = list(container_set | obl_set | set(po_numbers) | set(booking_numbers) | shared_ids)
+        all_ids = []
+        all_ids.extend(containers)
+        all_ids.extend(po_numbers)
+        all_ids.extend(booking_numbers)
+        all_ids.extend(obl_nos)
 
         if all_ids:
-            plan["query_text"] = " ".join(all_ids) + " " + plan["query_text"]
+            plan["query_text"] = " ".join(list(set(all_ids))) + " " + plan["query_text"]
 
         filter_clauses: List[str] = []
-        has_strong_ids = bool(all_ids)
+        has_strong_ids = bool(containers or po_numbers or booking_numbers or obl_nos)
         if plan.get("extra_filter") and not has_strong_ids:
             filter_clauses.append(f"({plan['extra_filter']})")
 
@@ -211,13 +209,6 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         if obl_nos:
             filter_clauses.append(_any_in("obl_nos", obl_nos))
-            
-        if shared_ids:
-            # Handle IDs that could be either PO or Booking with an OR
-            shared_list = list(shared_ids)
-            po_part = _any_in("po_numbers", shared_list)
-            bk_part = _any_in("booking_numbers", shared_list)
-            filter_clauses.append(f"({po_part} or {bk_part})")
 
         status_keywords = [s.lower() for s in (extracted.get("status_keywords") or [])]
         status_map = {
@@ -273,36 +264,21 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         delay_days = _extract_delay_days(q)
         if delay_days is not None:
-            # Polyvalent delay logic: if generic, check both DP and FD
-            if _mentions_final_destination(q):
-                delay_field = "fd_delayed_dur"
-            elif "discharge" in q.lower() or "port" in q.lower():
-                delay_field = "dp_delayed_dur"
-            else:
-                delay_field = "any_delay" # Special marker for post-filter or we use OR in extra_filter
-            
-            if delay_field == "any_delay":
-                # For generic delay, it's better to add to extra_filter as an OR
-                op = ">=" if delay_days else ">"
-                clause = f"(dp_delayed_dur {op} {delay_days} or fd_delayed_dur {op} {delay_days})"
-                if plan.get("extra_filter"):
-                    plan["extra_filter"] = f"({plan['extra_filter']}) and {clause}"
-                else:
-                    plan["extra_filter"] = clause
-            else:
-                post_filter["delay"] = {
-                    "field": delay_field,
-                    "op": ">=" if delay_days else ">",
-                    "days": delay_days,
-                }
+            delay_field = (
+                "fd_delayed_dur" if _mentions_final_destination(q) else "dp_delayed_dur"
+            )
+            post_filter["delay"] = {
+                "field": delay_field,
+                "op": ">=" if delay_days else ">",
+                "days": delay_days,
+            }
 
         if post_filter:
             plan["post_filter"] = post_filter
 
         if _wants_bucket_chart(q):
             plan["include_total_count"] = True
-            current_top_k = plan.get("top_k")
-            plan["top_k"] = max(current_top_k or 20, 500)
+            plan["top_k"] = max(plan.get("top_k", 20), 500)
             if not plan.get("query_text") or plan["query_text"] == q:
                 plan["query_text"] = "*"
 

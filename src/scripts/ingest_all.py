@@ -4,6 +4,8 @@
 
 
 import glob
+import hashlib
+import json
 import os
 import shutil
 import sys
@@ -46,6 +48,39 @@ def robust_upload(tool, docs, batch_size=100, max_retries=3):
             )
 
 
+def _manifest_path(processed_dir: str) -> str:
+    return os.path.join(processed_dir, "manifest.json")
+
+
+def load_manifest(processed_dir: str) -> dict:
+    path = _manifest_path(processed_dir)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Failed to read manifest: {e}. Starting fresh.")
+        return {}
+
+
+def save_manifest(processed_dir: str, manifest: dict) -> None:
+    path = _manifest_path(processed_dir)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+    os.replace(tmp_path, path)
+
+
+def compute_doc_hash(doc: dict) -> str:
+    payload = {
+        "content": doc.get("content", ""),
+        "metadata": doc.get("metadata") or {},
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
 def ingest_all():
     start_time = time.perf_counter()
     data_dir = os.path.abspath(
@@ -53,6 +88,7 @@ def ingest_all():
     )
     processed_dir = os.path.join(data_dir, "processed")
     os.makedirs(processed_dir, exist_ok=True)
+    manifest = load_manifest(processed_dir)
 
     jsonl_files = glob.glob(os.path.join(data_dir, "*.jsonl"))
 
@@ -79,10 +115,20 @@ def ingest_all():
         print(f"Loaded {len(raw_docs)} documents.")
 
         processed_docs = []
+        pending_manifest = dict(manifest)
+        skipped = 0
         print(f"Processing and embedding...")
         for i, d in enumerate(raw_docs):
             try:
+                doc_id = d.get("document_id")
+                if not doc_id:
+                    raise ValueError("Missing document_id")
+                content_hash = compute_doc_hash(d)
+                if pending_manifest.get(str(doc_id)) == content_hash:
+                    skipped += 1
+                    continue
                 processed_docs.append(flatten_document(d, embedder))
+                pending_manifest[str(doc_id)] = content_hash
                 if (i + 1) % 100 == 0:
                     print(f"Processed {i+1}/{len(raw_docs)} docs...")
             except Exception as e:
@@ -98,11 +144,21 @@ def ingest_all():
                 dest_path = os.path.join(processed_dir, file_name)
                 shutil.move(file_path, dest_path)
                 print(f"Moved {file_name} to 'processed' folder.")
+                manifest = pending_manifest
+                save_manifest(processed_dir, manifest)
             except Exception as e:
                 print(f"ERROR: Complete ingestion failed for {file_name}: {e}")
                 print(f"File {file_name} remains in data folder for retry.")
         else:
-            print(f"No documents to upload for {file_name}")
+            print(f"No documents to upload for {file_name} (skipped {skipped}).")
+            try:
+                dest_path = os.path.join(processed_dir, file_name)
+                shutil.move(file_path, dest_path)
+                print(f"Moved {file_name} to 'processed' folder.")
+                manifest = pending_manifest
+                save_manifest(processed_dir, manifest)
+            except Exception as e:
+                print(f"Failed to move {file_name} to processed: {e}")
 
     end_time = time.perf_counter()
     delta = end_time - start_time

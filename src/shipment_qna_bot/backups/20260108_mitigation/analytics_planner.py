@@ -23,7 +23,6 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         q = (
             state.get("normalized_question") or state.get("question_raw") or ""
         ).strip()
-        extracted = state.get("extracted_ids") or {}
 
         # Simple heuristic: if asking for "how many", we just want count.
         # If asking for "status" or "delayed", we might want facets.
@@ -33,9 +32,8 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "query_text": "*",  # usually analytics over all or filtered set
             "top_k": 0,  # we care about aggregates, not individual hits usually
             "vector_k": 10,
-            "extra_filter": (state.get("retrieval_plan") or {}).get("extra_filter"), # Re-use filters from planner if available
+            "extra_filter": None,  # could add filter based on entities if needed
             "include_total_count": True,
-            "facets": ["shipment_status", "delayed_dp", "delayed_fd", "hot_container_flag"],
             "reason": "analytics intent",
         }
 

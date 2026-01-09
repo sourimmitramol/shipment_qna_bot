@@ -1,15 +1,17 @@
+from langchain_core.messages import AIMessage
+
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 
-_CHAT_TOOL = None
+_chat_tool: AzureOpenAIChatTool | None = None
 
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
-    global _CHAT_TOOL
-    if _CHAT_TOOL is None:
-        _CHAT_TOOL = AzureOpenAIChatTool()
-    return _CHAT_TOOL
+    global _chat_tool
+    if _chat_tool is None:
+        _chat_tool = AzureOpenAIChatTool()
+    return _chat_tool
 
 
 def intent_node(state: GraphState) -> GraphState:
@@ -27,12 +29,13 @@ def intent_node(state: GraphState) -> GraphState:
         "You are an intent classifier for a Shipment Q&A Bot.\n"
         "Analyze the user's input and extract:\n"
         "1. Primary Intent: One of ['retrieval', 'analytics', 'greeting', 'end'].\n"
-        "2. All Intents: A list of all applicable intents (e.g. ['retrieval', 'complaint']).\n"
+        "2. All Intents: A list of all applicable intents (include sub-intents such as "
+        "['status', 'delay', 'eta_window', 'hot'] when relevant).\n"
         "3. Sentiment: One of ['positive', 'neutral', 'negative'].\n\n"
         "Output JSON ONLY:\n"
         "{\n"
         '  "primary_intent": "retrieval",\n'
-        '  "intents": ["retrieval"],\n'
+        '  "intents": ["retrieval", "status"],\n'
         '  "sentiment": "neutral"\n'
         "}"
     )
@@ -83,16 +86,25 @@ def intent_node(state: GraphState) -> GraphState:
         sentiment = "neutral"
         usage_metadata = state.get("usage_metadata")
 
-    return {
+    logger.info(
+        f"Classified intent: {intent}",
+        extra={"extra_data": {"text_snippet": text[:50]}},
+    )
+
+    result = {
         "intent": intent,
         "sub_intents": sub_intents,
         "sentiment": sentiment,
         "usage_metadata": usage_metadata,
     }
 
-    logger.info(
-        f"Classified intent: {intent}",
-        extra={"extra_data": {"text_snippet": text[:50]}},
-    )
+    if intent == "greeting":
+        greeting_text = (
+            "Hello! I can help with shipment status, ETA, delays, or analytics. "
+            "What would you like to check?"
+        )
+        result["answer_text"] = greeting_text
+        result["messages"] = [AIMessage(content=greeting_text)]
+        result["is_satisfied"] = True
 
-    return {"intent": intent}
+    return result

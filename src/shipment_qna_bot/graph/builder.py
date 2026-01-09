@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
@@ -12,6 +14,7 @@ from shipment_qna_bot.graph.nodes.planner import planner_node
 from shipment_qna_bot.graph.nodes.retrieve import retrieve_node
 from shipment_qna_bot.graph.nodes.router import route_node
 from shipment_qna_bot.graph.state import GraphState
+from shipment_qna_bot.tools.date_tools import get_today_date
 
 
 def should_continue(state: GraphState):
@@ -20,7 +23,8 @@ def should_continue(state: GraphState):
     """
     if state.get("is_satisfied"):
         return "end"
-    if state.get("retry_count", 0) >= state.get("max_retries", 3):
+    
+    if (state.get("retry_count") or 0) >= (state.get("max_retries") or 3):
         return "end"
 
     intent = state.get("intent")
@@ -114,6 +118,10 @@ def run_graph(input_state: dict) -> dict:
             "completion_tokens": 0,
             "total_tokens": 0,
         }
+    if "today_date" not in input_state:
+        input_state["today_date"] = get_today_date()
+    if "now_utc" not in input_state:
+        input_state["now_utc"] = datetime.now(timezone.utc).isoformat()
 
     # Convert question_raw to a message for history persistence
     from langchain_core.messages import HumanMessage
