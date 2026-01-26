@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
 
@@ -81,24 +82,25 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "completion_tokens": 0,
         "total_tokens": 0,
     }
-    try:
-        chat = _get_chat_tool()
-        import json
+    if not is_test_mode():
+        try:
+            chat = _get_chat_tool()
+            import json
 
-        response = chat.chat_completion(messages, temperature=0.0)
-        res = response["content"]
-        usage = response["usage"]
+            response = chat.chat_completion(messages, temperature=0.0)
+            res = response["content"]
+            usage = response["usage"]
 
-        # Accumulate usage
-        for k in usage:
-            usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
+            # Accumulate usage
+            for k in usage:
+                usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
 
-        # Find JSON block in response
-        json_match = re.search(r"\{.*\}", res, re.DOTALL)
-        if json_match:
-            llm_extracted = json.loads(json_match.group(0))
-    except Exception as e:
-        logger.warning(f"LLM Extraction failed: {e}. Falling back to regex.")
+            # Find JSON block in response
+            json_match = re.search(r"\{.*\}", res, re.DOTALL)
+            if json_match:
+                llm_extracted = json.loads(json_match.group(0))
+        except Exception as e:
+            logger.warning(f"LLM Extraction failed: {e}. Falling back to regex.")
 
     # Merge results
     # Merge results and normalize to UPPERCASE for ID fields

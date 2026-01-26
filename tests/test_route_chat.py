@@ -51,7 +51,11 @@ def test_chat_endpoint_basic_flow(monkeypatch):
                 "data": [{"status": "ON_TIME", "count": 1}],
                 "encodings": {"x": "status", "y": "count"},
             },
-            "table": [{"status": "ON_TIME", "count": 1}],
+            "table_spec": {
+                "columns": ["status", "count"],
+                "rows": [{"status": "ON_TIME", "count": 1}],
+                "title": "Fake table",
+            },
         }
 
     monkeypatch.setattr(routes_module, "run_graph", fake_run_graph)
@@ -88,4 +92,4 @@ def test_chat_endpoint_basic_flow(monkeypatch):
     assert data["chart"]["data"][0]["status"] == "ON_TIME"
 
     assert data["table"] is not None
-    assert data["table"][0]["status"] == "ON_TIME"
+    assert data["table"]["rows"][0]["status"] == "ON_TIME"

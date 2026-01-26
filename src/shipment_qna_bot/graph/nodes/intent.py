@@ -3,6 +3,7 @@ from langchain_core.messages import AIMessage
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
 
@@ -21,6 +22,48 @@ def intent_node(state: GraphState) -> GraphState:
     text = state.get("normalized_question", "")
     if not text:
         return {"intent": "end"}
+
+    if is_test_mode():
+        lowered = text.lower()
+        greeting_words = {"hi", "hello", "hey", "good morning", "good afternoon"}
+        analytics_words = {"chart", "graph", "analytics", "breakdown", "bucket"}
+
+        intent = "retrieval"
+        if any(w in lowered for w in greeting_words):
+            intent = "greeting"
+        elif any(w in lowered for w in analytics_words):
+            intent = "analytics"
+
+        sub_intents = [intent]
+        if "eta" in lowered:
+            sub_intents.append("eta")
+        if "delay" in lowered or "delayed" in lowered:
+            sub_intents.append("delay")
+        if "status" in lowered:
+            sub_intents.append("status")
+
+        # Deduplicate while preserving order
+        seen = set()
+        sub_intents = [s for s in sub_intents if not (s in seen or seen.add(s))]
+
+        result = {
+            "intent": intent,
+            "sub_intents": sub_intents,
+            "sentiment": "neutral",
+            "usage_metadata": state.get("usage_metadata")
+            or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+
+        if intent == "greeting":
+            greeting_text = (
+                "Hello! I can help with shipment status, ETA, delays, or analytics. "
+                "What would you like to check?"
+            )
+            result["answer_text"] = greeting_text
+            result["messages"] = [AIMessage(content=greeting_text)]
+            result["is_satisfied"] = True
+
+        return result
 
     import json
     import re

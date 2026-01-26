@@ -6,6 +6,7 @@ from shipment_qna_bot.graph.state import RetrievalPlan
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
 
@@ -102,21 +103,22 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "completion_tokens": 0,
             "total_tokens": 0,
         }
-        try:
-            chat = _get_chat_tool()
-            response = chat.chat_completion(messages, temperature=0.0)
-            res = response["content"]
-            usage = response["usage"]
+        if not is_test_mode():
+            try:
+                chat = _get_chat_tool()
+                response = chat.chat_completion(messages, temperature=0.0)
+                res = response["content"]
+                usage = response["usage"]
 
-            # Accumulate usage
-            for k in usage:
-                usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
+                # Accumulate usage
+                for k in usage:
+                    usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
 
-            json_match = re.search(r"\{.*\}", res, re.DOTALL)
-            if json_match:
-                plan_data = json.loads(json_match.group(0))
-        except Exception as e:
-            logger.warning(f"Planning LLM failed: {e}")
+                json_match = re.search(r"\{.*\}", res, re.DOTALL)
+                if json_match:
+                    plan_data = json.loads(json_match.group(0))
+            except Exception as e:
+                logger.warning(f"Planning LLM failed: {e}")
 
         # Construct final plan
         plan: RetrievalPlan = {
@@ -125,7 +127,9 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "vector_k": 30,
             "extra_filter": plan_data.get("extra_filter"),
             "post_filter": None,
-            "reason": plan_data.get("reason", "fallback"),
+            "reason": plan_data.get(
+                "reason", "test_mode" if is_test_mode() else "fallback"
+            ),
         }
 
         def _safe(s: str) -> str:

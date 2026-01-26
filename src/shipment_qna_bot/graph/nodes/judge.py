@@ -5,6 +5,7 @@ from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.date_tools import get_today_date
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 _CHAT_TOOL = None
 
@@ -36,6 +37,11 @@ def judge_node(state: Dict[str, Any]) -> Dict[str, Any]:
         question = state.get("question_raw") or ""
         answer = state.get("answer_text") or ""
         hits = state.get("hits") or []
+
+        if is_test_mode():
+            state["is_satisfied"] = True
+            state["reflection_feedback"] = None
+            return state
 
         if not hits:
             # If no hits, we can't really judge grounding, but we can judge if the "no info" answer is acceptable.

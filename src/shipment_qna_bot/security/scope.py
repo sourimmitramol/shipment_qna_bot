@@ -4,6 +4,10 @@ from typing import Dict, List, Optional, Union
 
 from shipment_qna_bot.logging.logger import logger
 
+_ALLOW_UNSAFE_SCOPE = os.getenv(
+    "SHIPMENT_QNA_BOT_ALLOW_UNSAFE_SCOPE", "false"
+).strip().lower() in {"1", "true", "yes", "on"}
+
 _REGISTRY_CACHE: Optional[Dict[str, List[str]]] = None
 
 
@@ -52,8 +56,9 @@ def resolve_allowed_scope(
     Rules:
     1. If payload_codes is None/Empty -> Return empty list (Fail Closed).
     2. Normalize payload_codes to List[str].
-    3. Validate that 'user_identity' is authorized for requested codes using
-       a registry (fail closed if missing).
+    3. If user_identity is missing -> Fail closed unless SHIPMENT_QNA_BOT_ALLOW_UNSAFE_SCOPE=true.
+    4. Validate that 'user_identity' is authorized for requested codes using
+       a registry (fail closed if missing) unless SHIPMENT_QNA_BOT_ALLOW_UNSAFE_SCOPE=true.
        Registry sources: CONSIGNEE_SCOPE_REGISTRY_JSON or
        CONSIGNEE_SCOPE_REGISTRY_PATH (JSON mapping user->codes).
 
@@ -80,29 +85,36 @@ def resolve_allowed_scope(
         logger.error(f"Invalid payload_codes format: {type(payload_codes)}")
         return []
 
-    # Deduplicate
-    codes = list(set(codes))
+    # Deduplicate while preserving order
+    seen = set()
+    codes = [c for c in codes if not (c in seen or seen.add(c))]
 
     if not user_identity:
-        logger.warning(
-            "Missing user identity; allowing payload consignee codes (no registry check)."
-        )
-        logger.info(
-            f"Resolved scope for {user_identity}: {codes}",
-            extra={"extra_data": {"scope_count": len(codes)}},
-        )
-        return codes
+        if _ALLOW_UNSAFE_SCOPE:
+            logger.warning(
+                "Missing user identity; allowing payload consignee codes due to unsafe override."
+            )
+            logger.info(
+                f"Resolved scope for {user_identity}: {codes}",
+                extra={"extra_data": {"scope_count": len(codes)}},
+            )
+            return codes
+        logger.warning("Missing user identity; access denied.")
+        return []
 
     registry = _load_identity_registry()
     if not registry:
-        logger.error(
-            "No consignee scope registry available; allowing payload consignee codes."
-        )
-        logger.info(
-            f"Resolved scope for {user_identity}: {codes}",
-            extra={"extra_data": {"scope_count": len(codes)}},
-        )
-        return codes
+        if _ALLOW_UNSAFE_SCOPE:
+            logger.error(
+                "No consignee scope registry available; allowing payload consignee codes due to unsafe override."
+            )
+            logger.info(
+                f"Resolved scope for {user_identity}: {codes}",
+                extra={"extra_data": {"scope_count": len(codes)}},
+            )
+            return codes
+        logger.error("No consignee scope registry available; access denied.")
+        return []
 
     allowed_codes = registry.get(user_identity) or registry.get("*") or []
     allowed_codes = [c for c in allowed_codes if c]

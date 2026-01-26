@@ -1,7 +1,8 @@
 # tests/test_schemas_chat.py
 
 from shipment_qna_bot.models.schemas import (ChartSpec, ChatAnswer,
-                                             ChatRequest, EvidenceItem)
+                                             ChatRequest, EvidenceItem,
+                                             TableSpec)
 
 
 def test_chat_request_normalizes_question_and_consignee_codes():
@@ -55,14 +56,21 @@ def test_chat_answer_with_evidence_and_chart_and_table():
         encodings={"x": "status", "y": "count"},
     )
 
-    table = [
-        {"container_number": "OOCU8898279", "is_delayed_fd": "EARLY", "delayed_fd": -2},
-        {
-            "container_number": "TCLU2937251",
-            "is_delayed_fd": "DELAYED",
-            "delayed_fd": 4,
-        },
-    ]
+    table = TableSpec(
+        columns=["container_number", "is_delayed_fd", "delayed_fd"],
+        rows=[
+            {
+                "container_number": "OOCU8898279",
+                "is_delayed_fd": "EARLY",
+                "delayed_fd": -2,
+            },
+            {
+                "container_number": "TCLU2937251",
+                "is_delayed_fd": "DELAYED",
+                "delayed_fd": 4,
+            },
+        ],
+    )
 
     answer = ChatAnswer(
         conversation_id="test-conv",
@@ -80,4 +88,4 @@ def test_chat_answer_with_evidence_and_chart_and_table():
     assert answer.chart is not None
     assert answer.chart.kind == "bar"
     assert answer.table is not None
-    assert len(answer.table) == 2
+    assert len(answer.table.rows) == 2

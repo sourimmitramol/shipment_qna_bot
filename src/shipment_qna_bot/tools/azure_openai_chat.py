@@ -4,12 +4,23 @@ from typing import Any, Dict, List, Optional
 from dotenv import find_dotenv, load_dotenv
 from openai import AzureOpenAI
 
+from shipment_qna_bot.utils.runtime import is_test_mode
+
 # Load environment variables
 load_dotenv(find_dotenv(), override=True)
 
 
 class AzureOpenAIChatTool:
     def __init__(self):
+        self._test_mode = is_test_mode()
+        if self._test_mode:
+            self.api_key = "test"
+            self.api_version = "test"
+            self.azure_endpoint = "test"
+            self.deployment_name = "test"
+            self.client = None
+            return
+
         self.api_key = os.getenv("AZURE_OPENAI_API_KEY")
         self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
 
@@ -56,6 +67,16 @@ class AzureOpenAIChatTool:
         Generates a chat completion using the Azure OpenAI client.
         Returns a dict with 'content', 'usage', and optionally 'tool_calls'.
         """
+        if self._test_mode:
+            return {
+                "content": "",
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+            }
+
         try:
             kwargs = {
                 "model": self.deployment_name,
