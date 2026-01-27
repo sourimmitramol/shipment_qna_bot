@@ -351,8 +351,10 @@ def _split_ceo_block(block: str) -> tuple[str, List[str], List[str]]:
     message_lines: List[str] = []
 
     for idx, line in enumerate(lines[1:], start=1):
-        if len(title_lines) < 2 and len(line) <= 80 and not line.endswith(
-            (".", "!", "?")
+        if (
+            len(title_lines) < 2
+            and len(line) <= 80
+            and not line.endswith((".", "!", "?"))
         ):
             title_lines.append(line)
             continue
