@@ -529,7 +529,7 @@ def build_static_overview_answer(
 
 
 def static_greet_info_node(state: GraphState) -> GraphState:
-    question = state.get("question_raw") or state.get("normalized_question") or ""
+    question = state.get("normalized_question") or state.get("question_raw") or ""
     extracted = state.get("extracted_ids") or {}
     locations = extracted.get("location") or []
     answer_text = build_static_overview_answer(question, locations)
