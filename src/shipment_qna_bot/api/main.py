@@ -4,6 +4,8 @@
 # uv run uvicorn shipment_qna_bot.api.main:app --reload --host=127.0.0.1 --port=8000
 #################
 import os
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -14,6 +16,8 @@ from shipment_qna_bot.api.routes_chat import \
 from shipment_qna_bot.logging.middleware_log import RequestLoggingMiddleware
 
 app = FastAPI(title="MCS Shipment Chat Bot")
+_APP_INSTANCE_ID = str(uuid.uuid4())
+_APP_STARTED_AT = datetime.now(timezone.utc).isoformat()
 
 # loging middleware (trace_id, timing, basic request logs)
 app.add_middleware(RequestLoggingMiddleware)
@@ -31,6 +35,15 @@ async def read_root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Shipment Q&A Bot API is running. Documentation at /docs"}
+
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "instance_id": _APP_INSTANCE_ID,
+        "started_at": _APP_STARTED_AT,
+    }
 
 
 # routers as chat_router as rote via user intention hook

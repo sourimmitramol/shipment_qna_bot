@@ -58,6 +58,7 @@ _OVERVIEW_HINTS = {
     "youtube",
     "facebook",
     "starlink",
+    "message",
 }
 
 _RETRIEVAL_HINTS = {
@@ -254,7 +255,7 @@ def _select_section_key(question: str) -> str:
         return "history"
     if _contains_any(lowered, {"vision", "mission", "values"}):
         return "vision"
-    if _contains_any(lowered, {"ceo", "leadership", "management"}):
+    if _contains_any(lowered, {"ceo", "leadership", "management", "message"}):
         return "ceo"
     return "company_overview"
 
@@ -334,6 +335,38 @@ def _extract_paragraphs_with_keywords(text: str, keywords: Iterable[str]) -> Lis
         if any(k in lowered for k in keywords):
             matches.append(para)
     return matches
+
+
+def _split_ceo_block(block: str) -> tuple[str, List[str], List[str]]:
+    lines = [l.strip() for l in block.splitlines() if l.strip()]
+    if not lines:
+        return "", [], []
+    if lines[0].startswith("**") and lines[0].endswith("**"):
+        lines = lines[1:]
+    if not lines:
+        return "", [], []
+
+    name = lines[0]
+    title_lines: List[str] = []
+    message_lines: List[str] = []
+
+    for idx, line in enumerate(lines[1:], start=1):
+        if len(title_lines) < 2 and len(line) <= 80 and not line.endswith(
+            (".", "!", "?")
+        ):
+            title_lines.append(line)
+            continue
+        message_lines = lines[idx:]
+        break
+
+    return name, title_lines, message_lines
+
+
+def _format_ceo_name(region: str, name: str, titles: List[str]) -> str:
+    title_text = "; ".join(titles) if titles else "CEO"
+    if region:
+        return f"{region}: {name} — {title_text}"
+    return f"{name} — {title_text}"
 
 
 def _answer_social_query(question: str, text: str) -> str:
@@ -463,13 +496,26 @@ def _answer_ceo_query(question: str, text: str) -> str:
         return "CEO information is not available in the overview file."
 
     lowered = (question or "").lower()
+    is_name_query = "name" in lowered or re.search(r"\bwho\s+is\b", lowered)
+    wants_message = "message" in lowered or "note" in lowered or "statement" in lowered
+
     if "america" in lowered or "usa" in lowered or "u.s." in lowered:
         block = _extract_subsection(section, "MCS America")
         if block:
+            name, titles, message_lines = _split_ceo_block(block)
+            if is_name_query and not wants_message:
+                return _format_ceo_name("MCS America", name, titles)
+            if wants_message and message_lines:
+                return "\n".join(message_lines).strip()
             return f"**CEO Message**\n\n{block}"
     if "hong kong" in lowered or "hk" in lowered:
         block = _extract_subsection(section, "MCS Hong Kong")
         if block:
+            name, titles, message_lines = _split_ceo_block(block)
+            if is_name_query and not wants_message:
+                return _format_ceo_name("MCS Hong Kong", name, titles)
+            if wants_message and message_lines:
+                return "\n".join(message_lines).strip()
             return f"**CEO Message**\n\n{block}"
 
     return section.strip()

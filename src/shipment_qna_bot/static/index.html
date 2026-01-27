@@ -317,19 +317,62 @@
         const sessionDisplay = document.getElementById('session-display');
         const downloadBtn = document.getElementById('download-btn');
 
+        const INITIAL_BOT_MESSAGE = 'Hello! I can help you track shipments and answer questions. Try asking about specific containers.';
+
         // History for download
-        let chatHistory = [{ role: 'bot', text: 'Hello! I can help you track shipments and answer questions. Try asking about specific containers.', timestamp: new Date().toISOString() }];
+        let chatHistory = [{ role: 'bot', text: INITIAL_BOT_MESSAGE, timestamp: new Date().toISOString() }];
+
+        function newConversationId() {
+            return 'web-' + Date.now();
+        }
+
+        function resetChatSession() {
+            conversationId = newConversationId();
+            sessionStorage.setItem('convId', conversationId);
+            sessionDisplay.textContent = conversationId;
+            chatContainer.innerHTML = '';
+            chatHistory = [];
+            addMessage(INITIAL_BOT_MESSAGE, 'bot');
+        }
 
         // Simple conversation ID for demo (session storage)
-        let conversationId = sessionStorage.getItem('convId') || 'web-' + Date.now();
+        let conversationId = sessionStorage.getItem('convId') || newConversationId();
         sessionStorage.setItem('convId', conversationId);
         sessionDisplay.textContent = conversationId;
+
+        // Reset session id when the tab/window is closed or refreshed
+        window.addEventListener('beforeunload', () => {
+            sessionStorage.removeItem('convId');
+        });
 
         // Persist consignee codes across refreshes
         const savedConsignee = localStorage.getItem('consigneeCodes') || '';
         if (savedConsignee) {
             consigneeInput.value = savedConsignee;
         }
+
+        async function syncServerInstance() {
+            try {
+                const res = await fetch('/api/health', { cache: 'no-store' });
+                if (!res.ok) {
+                    throw new Error('Health check failed');
+                }
+                const data = await res.json();
+                const serverId = data.instance_id || '';
+                const storedId = localStorage.getItem('serverInstanceId') || '';
+                if (serverId && storedId && serverId !== storedId) {
+                    resetChatSession();
+                }
+                if (serverId) {
+                    localStorage.setItem('serverInstanceId', serverId);
+                }
+            } catch (err) {
+                // If server is unreachable, reset session to avoid stale context
+                resetChatSession();
+            }
+        }
+
+        syncServerInstance();
 
         function addMessage(text, role, metadata = null, table = null) {
             const div = document.createElement('div');
