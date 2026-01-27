@@ -5,6 +5,7 @@ from langchain_core.messages import BaseMessage
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 _CHAT_TOOL = None
 
@@ -22,6 +23,9 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
     """
     question = state.get("question_raw", "").strip()
     history: List[BaseMessage] = state.get("messages", [])
+
+    if is_test_mode():
+        return {"normalized_question": question.lower()}
 
     # If there is no history or only one message (the current one), just return the lowercase question
     if len(history) <= 1:

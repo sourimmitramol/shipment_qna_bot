@@ -81,7 +81,22 @@ def compute_doc_hash(doc: dict) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
-def ingest_all():
+def _deadletter_path(data_dir: str, file_name: str) -> str:
+    failed_dir = os.path.join(data_dir, "failed")
+    os.makedirs(failed_dir, exist_ok=True)
+    base = os.path.splitext(os.path.basename(file_name))[0]
+    return os.path.join(failed_dir, f"{base}.failed.jsonl")
+
+
+def write_deadletter(data_dir: str, file_name: str, errors: list[dict]) -> str:
+    path = _deadletter_path(data_dir, file_name)
+    with open(path, "w", encoding="utf-8") as f:
+        for err in errors:
+            f.write(json.dumps(err, ensure_ascii=True) + "\n")
+    return path
+
+
+def ingest_all(*, allow_partial: bool = False) -> None:
     start_time = time.perf_counter()
     data_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "data")
@@ -117,6 +132,7 @@ def ingest_all():
         processed_docs = []
         pending_manifest = dict(manifest)
         skipped = 0
+        errors: list[dict] = []
         print(f"Processing and embedding...")
         for i, d in enumerate(raw_docs):
             try:
@@ -132,7 +148,26 @@ def ingest_all():
                 if (i + 1) % 100 == 0:
                     print(f"Processed {i+1}/{len(raw_docs)} docs...")
             except Exception as e:
+                errors.append(
+                    {
+                        "document_id": d.get("document_id"),
+                        "error": str(e),
+                        "document": d,
+                    }
+                )
                 print(f"Failed to process doc {d.get('document_id')}: {e}")
+
+        total_expected = len(raw_docs)
+        total_handled = skipped + len(processed_docs)
+        if errors:
+            deadletter = write_deadletter(data_dir, file_name, errors)
+            print(
+                f"ERROR: {len(errors)} docs failed. Wrote dead-letter to {deadletter}."
+            )
+            if not allow_partial:
+                raise RuntimeError(
+                    f"Aborting ingestion for {file_name}; fix errors and retry."
+                )
 
         if processed_docs:
             print(f"Uploading {len(processed_docs)} docs in batches...")
@@ -140,23 +175,33 @@ def ingest_all():
                 robust_upload(tool, processed_docs)
                 print(f"Finished ingestion for {file_name}")
 
-                # Move to processed folder
-                dest_path = os.path.join(processed_dir, file_name)
-                shutil.move(file_path, dest_path)
-                print(f"Moved {file_name} to 'processed' folder.")
-                manifest = pending_manifest
-                save_manifest(processed_dir, manifest)
+                if total_handled == total_expected and not errors:
+                    # Move to processed folder
+                    dest_path = os.path.join(processed_dir, file_name)
+                    shutil.move(file_path, dest_path)
+                    print(f"Moved {file_name} to 'processed' folder.")
+                    manifest = pending_manifest
+                    save_manifest(processed_dir, manifest)
+                else:
+                    print(
+                        f"WARNING: {file_name} not moved to processed; counts mismatch or errors present."
+                    )
             except Exception as e:
                 print(f"ERROR: Complete ingestion failed for {file_name}: {e}")
                 print(f"File {file_name} remains in data folder for retry.")
         else:
             print(f"No documents to upload for {file_name} (skipped {skipped}).")
             try:
-                dest_path = os.path.join(processed_dir, file_name)
-                shutil.move(file_path, dest_path)
-                print(f"Moved {file_name} to 'processed' folder.")
-                manifest = pending_manifest
-                save_manifest(processed_dir, manifest)
+                if total_handled == total_expected and not errors:
+                    dest_path = os.path.join(processed_dir, file_name)
+                    shutil.move(file_path, dest_path)
+                    print(f"Moved {file_name} to 'processed' folder.")
+                    manifest = pending_manifest
+                    save_manifest(processed_dir, manifest)
+                else:
+                    print(
+                        f"WARNING: {file_name} not moved to processed; counts mismatch or errors present."
+                    )
             except Exception as e:
                 print(f"Failed to move {file_name} to processed: {e}")
 
@@ -168,4 +213,17 @@ def ingest_all():
 
 
 if __name__ == "__main__":
-    ingest_all()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Ingest all JSONL files under data/ into the Azure Search index."
+    )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Upload docs that processed successfully even if some failed. "
+        "Files with errors stay in data/ for retry.",
+    )
+    args = parser.parse_args()
+
+    ingest_all(allow_partial=args.allow_partial)

@@ -172,6 +172,21 @@ def flatten_document(
     return flattened
 
 
+def _deadletter_path(data_dir: str, file_name: str) -> str:
+    failed_dir = os.path.join(data_dir, "failed")
+    os.makedirs(failed_dir, exist_ok=True)
+    base = os.path.splitext(os.path.basename(file_name))[0]
+    return os.path.join(failed_dir, f"{base}.failed.jsonl")
+
+
+def write_deadletter(data_dir: str, file_name: str, errors: list[dict]) -> str:
+    path = _deadletter_path(data_dir, file_name)
+    with open(path, "w", encoding="utf-8") as f:
+        for err in errors:
+            f.write(json.dumps(err, ensure_ascii=True) + "\n")
+    return path
+
+
 def main():
     import argparse
 
@@ -183,6 +198,12 @@ def main():
         nargs="?",
         default="shipment_dec25.jsonl",
         help="Name of the file in data/ directory",
+    )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Upload docs that processed successfully even if some failed. "
+        "Writes dead-letter for failures.",
     )
     args = parser.parse_args()
 
@@ -199,6 +220,7 @@ def main():
     embedder = AzureOpenAIEmbeddingsClient()
 
     processed_docs = []
+    errors: list[dict] = []
     print(
         f"Starting processing and embedding (this may take a few minutes for {len(raw_docs)} docs)..."
     )
@@ -209,7 +231,22 @@ def main():
             if (i + 1) % 100 == 0:
                 print(f"Processed {i+1}/{len(raw_docs)} docs...")
         except Exception as e:
+            errors.append(
+                {
+                    "document_id": d.get("document_id"),
+                    "error": str(e),
+                    "document": d,
+                }
+            )
             print(f"Failed to process doc {d.get('document_id')}: {e}")
+
+    if errors:
+        deadletter = write_deadletter(
+            os.path.dirname(data_path), args.file_name, errors
+        )
+        print(f"ERROR: {len(errors)} docs failed. Wrote dead-letter to {deadletter}.")
+        if not args.allow_partial:
+            return
 
     print(f"Uploading {len(processed_docs)} docs to the index...")
     tool = AzureAISearchTool()

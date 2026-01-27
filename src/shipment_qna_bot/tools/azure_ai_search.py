@@ -15,6 +15,7 @@ from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 
 from shipment_qna_bot.security.rls import build_search_filter
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 # from openai import AzureOpenAI
 
@@ -32,6 +33,18 @@ class AzureAISearchTool:
     """
 
     def __init__(self) -> None:
+        self._test_mode = is_test_mode()
+        if self._test_mode:
+            self._client = None
+            self._id_field = "document_id"
+            self._content_field = "chunk"
+            self._container_field = "container_number"
+            self._metadata_field = "metadata_json"
+            self._consignee_field = "consignee_code_ids"
+            self._consignee_is_collection = True
+            self._vector_field = "content_vector"
+            return
+
         endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
         api_key = os.getenv("AZURE_SEARCH_API_KEY")
         index_name = os.getenv("AZURE_SEARCH_INDEX_NAME")
@@ -116,6 +129,13 @@ class AzureAISearchTool:
           Never pass raw payload values here. The API layer is responsible for using
           `resolve_allowed_scope` and only forwarding the allowed list.
         """
+        if self._test_mode:
+            return {
+                "hits": [],
+                "count": 0 if include_total_count else None,
+                "facets": None,
+            }
+
         base_filter = self._consignee_filter(consignee_codes)
         final_filter = (
             base_filter if not extra_filter else f"({base_filter}) and ({extra_filter})"

@@ -13,12 +13,20 @@ from typing import List
 
 from openai import AzureOpenAI
 
+from shipment_qna_bot.utils.runtime import is_test_mode
+
 # from azure.ai.openai import AzureOpenAI
 # from azure.ai.openai.schemas import Embeddings
 
 
 class AzureOpenAIEmbeddingsClient:
     def __init__(self) -> None:
+        self._test_mode = is_test_mode()
+        if self._test_mode:
+            self._deployment = "test"
+            self._client = None
+            return
+
         endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         api_key = os.getenv("AZURE_OPENAI_API_KEY")
         api_version = os.getenv("AZURE_OPENAI_API_VERSION")
@@ -40,12 +48,31 @@ class AzureOpenAIEmbeddingsClient:
         )
 
     def embed_query(self, text: str) -> List[float]:
+        if self._test_mode:
+            return []
         text = (text or "").strip()
         if not text:
             return []
         max_retries = int(os.getenv("AZURE_OPENAI_EMBED_MAX_RETRIES", "5"))
         base_delay = float(os.getenv("AZURE_OPENAI_EMBED_RETRY_DELAY", "1.0"))
         last_error: Exception | None = None
+        transient_markers = [
+            "ratelimit",
+            "rate limit",
+            "429",
+            "timeout",
+            "timed out",
+            "service unavailable",
+            "temporarily unavailable",
+            "500",
+            "502",
+            "503",
+            "504",
+            "connection reset",
+            "connection aborted",
+            "econnreset",
+            "gateway timeout",
+        ]
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -58,7 +85,8 @@ class AzureOpenAIEmbeddingsClient:
             except Exception as e:
                 last_error = e
                 msg = str(e)
-                if "RateLimitReached" in msg or "429" in msg:
+                msg_lower = msg.lower()
+                if any(marker in msg_lower for marker in transient_markers):
                     time.sleep(base_delay * attempt)
                     continue
                 break

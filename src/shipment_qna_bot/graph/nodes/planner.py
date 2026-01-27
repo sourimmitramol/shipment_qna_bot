@@ -6,6 +6,7 @@ from shipment_qna_bot.graph.state import RetrievalPlan
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
 
@@ -102,21 +103,22 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "completion_tokens": 0,
             "total_tokens": 0,
         }
-        try:
-            chat = _get_chat_tool()
-            response = chat.chat_completion(messages, temperature=0.0)
-            res = response["content"]
-            usage = response["usage"]
+        if not is_test_mode():
+            try:
+                chat = _get_chat_tool()
+                response = chat.chat_completion(messages, temperature=0.0)
+                res = response["content"]
+                usage = response["usage"]
 
-            # Accumulate usage
-            for k in usage:
-                usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
+                # Accumulate usage
+                for k in usage:
+                    usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
 
-            json_match = re.search(r"\{.*\}", res, re.DOTALL)
-            if json_match:
-                plan_data = json.loads(json_match.group(0))
-        except Exception as e:
-            logger.warning(f"Planning LLM failed: {e}")
+                json_match = re.search(r"\{.*\}", res, re.DOTALL)
+                if json_match:
+                    plan_data = json.loads(json_match.group(0))
+            except Exception as e:
+                logger.warning(f"Planning LLM failed: {e}")
 
         # Construct final plan
         plan: RetrievalPlan = {
@@ -125,7 +127,9 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "vector_k": 30,
             "extra_filter": plan_data.get("extra_filter"),
             "post_filter": None,
-            "reason": plan_data.get("reason", "fallback"),
+            "reason": plan_data.get(
+                "reason", "test_mode" if is_test_mode() else "fallback"
+            ),
         }
 
         def _safe(s: str) -> str:
@@ -174,13 +178,13 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         container_set = {c for c in containers if c}
         obl_set = {o for o in obl_nos if o}
-        
+
         # Avoid category overlap to prevent 'and' collisions in filters
         if container_set:
             po_numbers = [p for p in po_numbers if p not in container_set]
             booking_numbers = [b for b in booking_numbers if b not in container_set]
             obl_nos = [o for o in obl_nos if o not in container_set]
-        
+
         # If an ID is both a PO and a Booking, we should search both in an 'OR' block
         # to ensure we find it regardless of which field it's actually in.
         shared_ids = set(po_numbers) & set(booking_numbers)
@@ -189,10 +193,17 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             booking_numbers = [b for b in booking_numbers if b not in shared_ids]
 
         # Booster: if we have specific IDs, make sure they are in query_text
-        all_ids = list(container_set | obl_set | set(po_numbers) | set(booking_numbers) | shared_ids)
+        all_ids = list(
+            container_set
+            | obl_set
+            | set(po_numbers)
+            | set(booking_numbers)
+            | shared_ids
+        )
 
         if all_ids:
             plan["query_text"] = " ".join(all_ids) + " " + plan["query_text"]
+            plan["include_total_count"] = True
 
         filter_clauses: List[str] = []
         has_strong_ids = bool(all_ids)
@@ -211,7 +222,7 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         if obl_nos:
             filter_clauses.append(_any_in("obl_nos", obl_nos))
-            
+
         if shared_ids:
             # Handle IDs that could be either PO or Booking with an OR
             shared_list = list(shared_ids)
@@ -279,8 +290,8 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             elif "discharge" in q.lower() or "port" in q.lower():
                 delay_field = "dp_delayed_dur"
             else:
-                delay_field = "any_delay" # Special marker for post-filter or we use OR in extra_filter
-            
+                delay_field = "any_delay"  # Special marker for post-filter or we use OR in extra_filter
+
             if delay_field == "any_delay":
                 # For generic delay, it's better to add to extra_filter as an OR
                 op = ">=" if delay_days else ">"

@@ -13,6 +13,8 @@ from shipment_qna_bot.graph.nodes.normalizer import normalize_node
 from shipment_qna_bot.graph.nodes.planner import planner_node
 from shipment_qna_bot.graph.nodes.retrieve import retrieve_node
 from shipment_qna_bot.graph.nodes.router import route_node
+from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
+    static_greet_info_node
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.tools.date_tools import get_today_date
 
@@ -23,7 +25,7 @@ def should_continue(state: GraphState):
     """
     if state.get("is_satisfied"):
         return "end"
-    
+
     if (state.get("retry_count") or 0) >= (state.get("max_retries") or 3):
         return "end"
 
@@ -48,6 +50,7 @@ def build_graph():
     workflow.add_node("retrieve", retrieve_node)
     workflow.add_node("answer", answer_node)
     workflow.add_node("judge", judge_node)
+    workflow.add_node("static_info", static_greet_info_node)
 
     # --- Add Edges ---
     # Start -> Normalizer
@@ -66,6 +69,7 @@ def build_graph():
         {
             "retrieval": "planner",
             "analytics": "analytics_planner",
+            "static_info": "static_info",
             "end": END,
         },
     )
@@ -75,6 +79,7 @@ def build_graph():
     workflow.add_edge("analytics_planner", "retrieve")
     workflow.add_edge("retrieve", "answer")
     workflow.add_edge("answer", "judge")
+    workflow.add_edge("static_info", END)
 
     # Reflective Loop
     workflow.add_conditional_edges(
@@ -122,6 +127,21 @@ def run_graph(input_state: dict) -> dict:
         input_state["today_date"] = get_today_date()
     if "now_utc" not in input_state:
         input_state["now_utc"] = datetime.now(timezone.utc).isoformat()
+
+    # Reset transient fields to avoid leaking prior turn state from the checkpointer.
+    input_state.setdefault("retrieval_plan", None)
+    input_state.setdefault("hits", [])
+    input_state.setdefault("idx_analytics", None)
+    input_state.setdefault("answer_text", None)
+    input_state.setdefault("citations", [])
+    input_state.setdefault("chart_spec", None)
+    input_state.setdefault("table_spec", None)
+    input_state.setdefault("notices", [])
+    input_state.setdefault("errors", [])
+    input_state.setdefault("intent", None)
+    input_state.setdefault("sub_intents", [])
+    input_state.setdefault("sentiment", None)
+    input_state.setdefault("reflection_feedback", None)
 
     # Convert question_raw to a message for history persistence
     from langchain_core.messages import HumanMessage

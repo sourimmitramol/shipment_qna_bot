@@ -1,7 +1,19 @@
+import json
+
 import pytest
 
+from shipment_qna_bot.security import scope as scope_module
 from shipment_qna_bot.security.rls import build_search_filter
 from shipment_qna_bot.security.scope import resolve_allowed_scope
+
+
+@pytest.fixture(autouse=True)
+def _mock_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "CONSIGNEE_SCOPE_REGISTRY_JSON",
+        json.dumps({"user1": ["A", "B", "C"]}),
+    )
+    scope_module._REGISTRY_CACHE = None
 
 
 def test_resolve_allowed_scope_empty():
@@ -11,15 +23,15 @@ def test_resolve_allowed_scope_empty():
 
 
 def test_resolve_allowed_scope_string():
-    assert resolve_allowed_scope("user1", "A,B, C") == ["A", "B", "C"] or [
-        "A",
-        "C",
-        "B",
-    ]  # Order not guaranteed
+    assert resolve_allowed_scope("user1", "A,B, C") == ["A", "B", "C"]
 
 
 def test_resolve_allowed_scope_list():
     assert resolve_allowed_scope("user1", ["A", "B"]) == ["A", "B"]
+
+
+def test_resolve_allowed_scope_missing_identity_allows_payload():
+    assert resolve_allowed_scope(None, ["A", "B"]) == ["A", "B"]
 
 
 def test_build_search_filter_empty():

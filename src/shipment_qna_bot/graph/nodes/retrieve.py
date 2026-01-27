@@ -13,6 +13,7 @@ from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
 from shipment_qna_bot.tools.azure_openai_embeddings import \
     AzureOpenAIEmbeddingsClient
+from shipment_qna_bot.utils.runtime import is_test_mode
 
 _SEARCH: Optional[AzureAISearchTool] = None
 _EMBED: Optional[AzureOpenAIEmbeddingsClient] = None
@@ -153,6 +154,11 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
             state["hits"] = []
             return state
 
+        if is_test_mode():
+            state["hits"] = []
+            state["idx_analytics"] = {"count": 0, "facets": None}
+            return state
+
         try:
             embedder = _get_embedder()
             vector = embedder.embed_query(query_text)  # type: ignore
@@ -288,9 +294,9 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
             state["hits"] = hits
             state["idx_analytics"] = {
                 "count": (
-                    len(hits)
+                    search_response.get("count")
                     if plan.get("include_total_count")
-                    else search_response.get("count")
+                    else len(hits)
                 ),
                 "facets": search_response.get("facets"),
             }
@@ -328,9 +334,9 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     state["hits"] = hits
                     state["idx_analytics"] = {
                         "count": (
-                            len(hits)
+                            search_response.get("count")
                             if plan.get("include_total_count")
-                            else search_response.get("count")
+                            else len(hits)
                         ),
                         "facets": search_response.get("facets"),
                     }

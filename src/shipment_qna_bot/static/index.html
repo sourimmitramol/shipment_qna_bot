@@ -274,7 +274,7 @@
             <aside id="sidebar">
                 <div class="sidebar-section">
                     <label for="consignee-input">Consignee Codes</label>
-                    <input type="text" id="consignee-input" placeholder="e.g. 0025833, 0000866" value="0025833">
+                    <input type="text" id="consignee-input" placeholder="e.g. 0025833, 0000866">
                     <small style="color: #888; font-size: 0.75rem;">Comma-separated values</small>
                 </div>
                 <div class="sidebar-section">
@@ -324,6 +324,12 @@
         let conversationId = sessionStorage.getItem('convId') || 'web-' + Date.now();
         sessionStorage.setItem('convId', conversationId);
         sessionDisplay.textContent = conversationId;
+
+        // Persist consignee codes across refreshes
+        const savedConsignee = localStorage.getItem('consigneeCodes') || '';
+        if (savedConsignee) {
+            consigneeInput.value = savedConsignee;
+        }
 
         function addMessage(text, role, metadata = null, table = null) {
             const div = document.createElement('div');
@@ -459,6 +465,9 @@
 
             // Split by comma and clean up
             const codes = consigneeValue.split(',').map(s => s.trim()).filter(s => s !== '');
+
+            // Remember for next time
+            localStorage.setItem('consigneeCodes', codes.join(', '));
 
             // Add user message
             addMessage(text, 'user');
