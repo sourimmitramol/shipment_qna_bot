@@ -1,18 +1,30 @@
 import os
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from langchain_core.messages import AIMessage
 
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.logger import logger
+from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.runtime import is_test_mode
+
+_chat_tool: Optional[AzureOpenAIChatTool] = None
 
 _OVERVIEW_CACHE: Dict[str, object] = {
     "path": None,
     "mtime": None,
     "text": None,
 }
+
+
+def _get_chat_tool() -> AzureOpenAIChatTool:
+    global _chat_tool
+    if _chat_tool is None:
+        _chat_tool = AzureOpenAIChatTool()
+    return _chat_tool
+
 
 _COMPANY_TOKENS = {
     "mcs",
@@ -523,6 +535,40 @@ def _answer_ceo_query(question: str, text: str) -> str:
     return section.strip()
 
 
+def _synthesize_static_answer(question: str, context_text: str) -> Dict[str, Any]:
+    """
+    Uses LLM to synthesize a concise answer from the extracted static context.
+    """
+    if is_test_mode():
+        return {"answer": context_text, "usage": {}}
+
+    system_prompt = (
+        "You are a helpful logistics assistant for MCS (MOL Consolidation Service).\n"
+        "Answer the user's question using ONLY the provided context from the company's internal documentation.\n"
+        "Guidelines:\n"
+        "1. Be concise and professional.\n"
+        "2. Do not include unrelated sections, headers, or internal directory markers unless directly asked.\n"
+        "3. If the answer is not in the context, politely say you don't have that specific information.\n"
+        "4. Use Markdown for formatting (bolding, lists) to make the answer readable.\n"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": f"Context:\n{context_text}\n\nQuestion: {question}",
+        },
+    ]
+
+    try:
+        tool = _get_chat_tool()
+        response = tool.chat_completion(messages, temperature=0.0)
+        return {"answer": response["content"], "usage": response.get("usage", {})}
+    except Exception as exc:
+        logger.error("Failed to synthesize static answer: %s", exc)
+        return {"answer": context_text, "usage": {}}
+
+
 def build_static_overview_answer(
     question: str, extracted_locations: Optional[List[str]] = None
 ) -> str:
@@ -580,13 +626,30 @@ def static_greet_info_node(state: GraphState) -> GraphState:
     question = state.get("normalized_question") or state.get("question_raw") or ""
     extracted = state.get("extracted_ids") or {}
     locations = extracted.get("location") or []
-    answer_text = build_static_overview_answer(question, locations)
+
+    # 1. Get raw context from the markdown file based on keywords
+    raw_context = build_static_overview_answer(question, locations)
+
+    # 2. Refine the answer using LLM for better context awareness
+    synthesis = _synthesize_static_answer(question, raw_context)
+    answer_text = synthesis["answer"]
+    usage = synthesis["usage"]
+
+    # 3. Update usage metadata
+    usage_metadata = state.get("usage_metadata") or {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    for k, v in usage.items():
+        usage_metadata[k] = usage_metadata.get(k, 0) + v
 
     result: GraphState = {
         "intent": "company_overview",
         "answer_text": answer_text,
         "is_satisfied": True,
         "messages": [AIMessage(content=answer_text)],
+        "usage_metadata": usage_metadata,
     }
 
     if "not configured yet" in answer_text.lower():
