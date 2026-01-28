@@ -317,19 +317,89 @@
         const sessionDisplay = document.getElementById('session-display');
         const downloadBtn = document.getElementById('download-btn');
 
+        const INITIAL_BOT_MESSAGE = 'Hello! I can help you track shipments and answer questions. Try asking about specific containers.';
+
         // History for download
-        let chatHistory = [{ role: 'bot', text: 'Hello! I can help you track shipments and answer questions. Try asking about specific containers.', timestamp: new Date().toISOString() }];
+        let chatHistory = [{ role: 'bot', text: INITIAL_BOT_MESSAGE, timestamp: new Date().toISOString() }];
+
+        function newConversationId() {
+            return 'web-' + Date.now();
+        }
+
+        function resetChatSession() {
+            conversationId = newConversationId();
+            sessionStorage.setItem('convId', conversationId);
+            sessionDisplay.textContent = conversationId;
+            chatContainer.innerHTML = '';
+            chatHistory = [];
+            addMessage(INITIAL_BOT_MESSAGE, 'bot');
+        }
 
         // Simple conversation ID for demo (session storage)
-        let conversationId = sessionStorage.getItem('convId') || 'web-' + Date.now();
+        let conversationId = sessionStorage.getItem('convId') || newConversationId();
         sessionStorage.setItem('convId', conversationId);
         sessionDisplay.textContent = conversationId;
 
-        // Persist consignee codes across refreshes
-        const savedConsignee = localStorage.getItem('consigneeCodes') || '';
-        if (savedConsignee) {
-            consigneeInput.value = savedConsignee;
+        // Reset session id when the tab/window is closed or refreshed
+        window.addEventListener('beforeunload', () => {
+            // We rely on backend session now, which tracks tab state via cookies
+        });
+
+        // Sync state from server on load
+        async function syncSession() {
+            try {
+                const res = await fetch('/api/session');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.consignee_codes && data.consignee_codes.length > 0) {
+                        consigneeInput.value = data.consignee_codes.join(', ');
+                    } else {
+                        consigneeInput.value = '';
+                    }
+                    if (data.conversation_id) {
+                        conversationId = data.conversation_id;
+                        sessionDisplay.textContent = conversationId;
+                    } else {
+                        // If no session on server, we might still have a local one 
+                        // but it's better to keep it in sync.
+                        sessionDisplay.textContent = conversationId;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to sync session:", err);
+            }
         }
+
+        syncSession();
+
+        async function syncServerInstance() {
+            try {
+                const res = await fetch('/api/health', { cache: 'no-store' });
+                if (!res.ok) {
+                    throw new Error('Health check failed');
+                }
+                const data = await res.json();
+                const serverId = data.instance_id || '';
+                const storedId = localStorage.getItem('serverInstanceId') || '';
+                if (serverId && storedId && serverId !== storedId) {
+                    // Server restarted, clear everything
+                    conversationId = newConversationId();
+                    sessionDisplay.textContent = conversationId;
+                    consigneeInput.value = '';
+                    chatContainer.innerHTML = '';
+                    chatHistory = [];
+                    addMessage(INITIAL_BOT_MESSAGE, 'bot');
+                }
+                if (serverId) {
+                    localStorage.setItem('serverInstanceId', serverId);
+                }
+            } catch (err) {
+                // If server is unreachable, reset session to avoid stale context
+                resetChatSession();
+            }
+        }
+
+        syncServerInstance();
 
         function addMessage(text, role, metadata = null, table = null) {
             const div = document.createElement('div');
@@ -466,9 +536,6 @@
             // Split by comma and clean up
             const codes = consigneeValue.split(',').map(s => s.trim()).filter(s => s !== '');
 
-            // Remember for next time
-            localStorage.setItem('consigneeCodes', codes.join(', '));
-
             // Add user message
             addMessage(text, 'user');
             input.value = '';
@@ -491,6 +558,14 @@
 
                 if (data.answer) {
                     addMessage(data.answer, 'bot', data.metadata, data.table);
+                    if (data.intent === 'end') {
+                        // Session was cleared on backend, let's clear local UI too for next turn
+                        setTimeout(() => {
+                            consigneeInput.value = '';
+                            conversationId = newConversationId();
+                            sessionDisplay.textContent = conversationId;
+                        }, 2000); // Small delay so they can read the goodbye
+                    }
                 } else {
                     addMessage("Sorry, I encountered an error.", 'bot');
                 }

@@ -1,0 +1,16 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.5, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\CHOWDHURYRaju\Desktop\shipment_qna_bot\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\CHOWDHURYRaju\Desktop\shipment_qna_bot
+configfile: pyproject.toml
+plugins: anyio-4.11.0, langsmith-0.4.46
+collecting ... collected 6 items
+
+tests/test_static_overview.py::test_static_overview_flow PASSED          [ 16%]
+tests/test_static_overview.py::test_static_overview_section_selection PASSED [ 33%]
+tests/test_static_overview.py::test_static_overview_ceo_selection PASSED [ 50%]
+tests/test_static_overview.py::test_static_overview_office_summary PASSED [ 66%]
+tests/test_static_overview.py::test_static_overview_starlink_snippet PASSED [ 83%]
+tests/test_static_overview.py::test_static_overview_social_channel PASSED [100%]
+
+============================== 6 passed in 1.11s ==============================

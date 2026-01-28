@@ -15,6 +15,18 @@ from shipment_qna_bot.security.scope import resolve_allowed_scope
 router = APIRouter(tags=["chat"], prefix="/api")
 
 
+@router.get("/session")
+async def get_session(request: Request):
+    """
+    Returns the current session's state (consignee_codes and conversation_id).
+    This allows the frontend to sync after a page refresh or server restart.
+    """
+    return {
+        "consignee_codes": request.session.get("consignee_codes", []),
+        "conversation_id": request.session.get("conversation_id"),
+    }
+
+
 @router.post("/chat", response_model=ChatAnswer)
 async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     """
@@ -32,8 +44,15 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
 
     # 1) Conversation/session handling
     # ensure payload always have convesation_id and its always has a value associated with it
-    # server generates conversation id if missing, generate a new one.
-    conversation_id = payload.conversation_id or str(uuid.uuid4())
+    # server generates conversation id if missing, check session first, then payload, then generate.
+    conversation_id = (
+        payload.conversation_id
+        or request.session.get("conversation_id")
+        or str(uuid.uuid4())
+    )
+
+    # Store in session for future requests
+    request.session["conversation_id"] = conversation_id
 
     # store in request.state so middleware can use it for RESPONSE logs
     request.state.conversation_id = conversation_id
@@ -51,6 +70,10 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         user_identity=user_identity,
         payload_codes=raw_consignee_codes,
     )
+
+    # If payload codes were provided, persist them in the session
+    if raw_consignee_codes:
+        request.session["consignee_codes"] = allowed_consignee_codes
 
     # Make the effective scope visible to middleware logging.
     # This is what we actually use for tools/RLS, not the raw payload.
@@ -122,6 +145,12 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     final_intent = result.get("intent", "-")
     request.state.intent = final_intent
     set_log_context(intent=final_intent)
+
+    # If the user wants to end the conversation, clear the session
+    # This resets both consignee_codes and conversation_id
+    if final_intent == "end":
+        request.session.clear()
+        logger.info("Session cleared due to 'end' intent.", extra={"step": "API:/chat"})
 
     answer_text = result.get("answer_text", "-") or "-"
 

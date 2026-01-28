@@ -1,18 +1,30 @@
 import os
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from langchain_core.messages import AIMessage
 
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.logger import logger
+from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.runtime import is_test_mode
+
+_chat_tool: Optional[AzureOpenAIChatTool] = None
 
 _OVERVIEW_CACHE: Dict[str, object] = {
     "path": None,
     "mtime": None,
     "text": None,
 }
+
+
+def _get_chat_tool() -> AzureOpenAIChatTool:
+    global _chat_tool
+    if _chat_tool is None:
+        _chat_tool = AzureOpenAIChatTool()
+    return _chat_tool
+
 
 _COMPANY_TOKENS = {
     "mcs",
@@ -58,6 +70,7 @@ _OVERVIEW_HINTS = {
     "youtube",
     "facebook",
     "starlink",
+    "message",
 }
 
 _RETRIEVAL_HINTS = {
@@ -252,9 +265,15 @@ def _select_section_key(question: str) -> str:
         return "services"
     if _contains_any(lowered, {"history", "founded", "anniversary", "established"}):
         return "history"
-    if _contains_any(lowered, {"vision", "mission", "values"}):
+    if _contains_any(lowered, {"vision", "mission"}):
         return "vision"
-    if _contains_any(lowered, {"ceo", "leadership", "management"}):
+    if "value" in lowered:
+        # If they specifically ask for "values" (plural) or "charts",
+        # they might want the MOL CHARTS in the CEO section.
+        # But "value" (singular) is in the Vision section.
+        # We'll return vision as primary but maybe expand context in synthesis.
+        return "vision"
+    if _contains_any(lowered, {"ceo", "leadership", "management", "message"}):
         return "ceo"
     return "company_overview"
 
@@ -334,6 +353,40 @@ def _extract_paragraphs_with_keywords(text: str, keywords: Iterable[str]) -> Lis
         if any(k in lowered for k in keywords):
             matches.append(para)
     return matches
+
+
+def _split_ceo_block(block: str) -> tuple[str, List[str], List[str]]:
+    lines = [l.strip() for l in block.splitlines() if l.strip()]
+    if not lines:
+        return "", [], []
+    if lines[0].startswith("**") and lines[0].endswith("**"):
+        lines = lines[1:]
+    if not lines:
+        return "", [], []
+
+    name = lines[0]
+    title_lines: List[str] = []
+    message_lines: List[str] = []
+
+    for idx, line in enumerate(lines[1:], start=1):
+        if (
+            len(title_lines) < 2
+            and len(line) <= 80
+            and not line.endswith((".", "!", "?"))
+        ):
+            title_lines.append(line)
+            continue
+        message_lines = lines[idx:]
+        break
+
+    return name, title_lines, message_lines
+
+
+def _format_ceo_name(region: str, name: str, titles: List[str]) -> str:
+    title_text = "; ".join(titles) if titles else "CEO"
+    if region:
+        return f"{region}: {name} — {title_text}"
+    return f"{name} — {title_text}"
 
 
 def _answer_social_query(question: str, text: str) -> str:
@@ -463,16 +516,63 @@ def _answer_ceo_query(question: str, text: str) -> str:
         return "CEO information is not available in the overview file."
 
     lowered = (question or "").lower()
+    is_name_query = "name" in lowered or re.search(r"\bwho\s+is\b", lowered)
+    wants_message = "message" in lowered or "note" in lowered or "statement" in lowered
+
     if "america" in lowered or "usa" in lowered or "u.s." in lowered:
         block = _extract_subsection(section, "MCS America")
         if block:
+            name, titles, message_lines = _split_ceo_block(block)
+            if is_name_query and not wants_message:
+                return _format_ceo_name("MCS America", name, titles)
+            if wants_message and message_lines:
+                return "\n".join(message_lines).strip()
             return f"**CEO Message**\n\n{block}"
     if "hong kong" in lowered or "hk" in lowered:
         block = _extract_subsection(section, "MCS Hong Kong")
         if block:
+            name, titles, message_lines = _split_ceo_block(block)
+            if is_name_query and not wants_message:
+                return _format_ceo_name("MCS Hong Kong", name, titles)
+            if wants_message and message_lines:
+                return "\n".join(message_lines).strip()
             return f"**CEO Message**\n\n{block}"
 
     return section.strip()
+
+
+def _synthesize_static_answer(question: str, context_text: str) -> Dict[str, Any]:
+    """
+    Uses LLM to synthesize a concise answer from the extracted static context.
+    """
+    if is_test_mode():
+        return {"answer": context_text, "usage": {}}
+
+    system_prompt = (
+        "You are a helpful logistics assistant for MCS (MOL Consolidation Service).\n"
+        "Answer the user's question using ONLY the provided context from the company's internal documentation.\n"
+        "Guidelines:\n"
+        "1. Be concise and professional.\n"
+        "2. Do not include unrelated sections, headers, or internal directory markers unless directly asked.\n"
+        "3. If the answer is not in the context, politely say you don't have that specific information.\n"
+        "4. Use Markdown for formatting (bolding, lists) to make the answer readable.\n"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": f"Context:\n{context_text}\n\nQuestion: {question}",
+        },
+    ]
+
+    try:
+        tool = _get_chat_tool()
+        response = tool.chat_completion(messages, temperature=0.0)
+        return {"answer": response["content"], "usage": response.get("usage", {})}
+    except Exception as exc:
+        logger.error("Failed to synthesize static answer: %s", exc)
+        return {"answer": context_text, "usage": {}}
 
 
 def build_static_overview_answer(
@@ -490,6 +590,30 @@ def build_static_overview_answer(
         matches = _extract_paragraphs_with_keywords(text, _STARLINK_TOKENS)
         if matches:
             return "\n\n".join(matches[:2]).strip()
+
+    # Special handling for Vision & Values
+    # Since "Vision" is its own section but "Values" (MOL CHARTS) is in the CEO Message,
+    # if the question mentions both, we should provide both sections to the LLM.
+    if ("vision" in lowered or "mission" in lowered) and (
+        "value" in lowered or "chart" in lowered
+    ):
+        vision_sec = _extract_section(
+            text, _SECTION_MARKERS["vision"][0], _SECTION_MARKERS["vision"][1]
+        )
+        ceo_sec = _extract_section(
+            text, _SECTION_MARKERS["ceo"][0], _SECTION_MARKERS["ceo"][1]
+        )
+        return f"{vision_sec}\n\n{ceo_sec}"
+
+    # If asking for values/charts specifically
+    if "values" in lowered or "mol chart" in lowered or "charts" in lowered:
+        ceo_sec = _extract_section(
+            text, _SECTION_MARKERS["ceo"][0], _SECTION_MARKERS["ceo"][1]
+        )
+        vision_sec = _extract_section(
+            text, _SECTION_MARKERS["vision"][0], _SECTION_MARKERS["vision"][1]
+        )
+        return f"{vision_sec}\n\n{ceo_sec}"
 
     section_key = _select_section_key(question)
     if section_key == "offices":
@@ -532,13 +656,30 @@ def static_greet_info_node(state: GraphState) -> GraphState:
     question = state.get("normalized_question") or state.get("question_raw") or ""
     extracted = state.get("extracted_ids") or {}
     locations = extracted.get("location") or []
-    answer_text = build_static_overview_answer(question, locations)
+
+    # 1. Get raw context from the markdown file based on keywords
+    raw_context = build_static_overview_answer(question, locations)
+
+    # 2. Refine the answer using LLM for better context awareness
+    synthesis = _synthesize_static_answer(question, raw_context)
+    answer_text = synthesis["answer"]
+    usage = synthesis["usage"]
+
+    # 3. Update usage metadata
+    usage_metadata = state.get("usage_metadata") or {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    for k, v in usage.items():
+        usage_metadata[k] = usage_metadata.get(k, 0) + v
 
     result: GraphState = {
         "intent": "company_overview",
         "answer_text": answer_text,
         "is_satisfied": True,
         "messages": [AIMessage(content=answer_text)],
+        "usage_metadata": usage_metadata,
     }
 
     if "not configured yet" in answer_text.lower():

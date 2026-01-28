@@ -42,10 +42,13 @@ def intent_node(state: GraphState) -> GraphState:
         lowered = text.lower()
         greeting_words = {"hi", "hello", "hey", "good morning", "good afternoon"}
         analytics_words = {"chart", "graph", "analytics", "breakdown", "bucket"}
+        exit_words = {"bye", "goodbye", "quit", "exit", "end", "thank you", "thanks"}
 
         intent = "retrieval"
         if any(w in lowered for w in greeting_words):
             intent = "greeting"
+        elif any(w in lowered for w in exit_words):
+            intent = "end"
         elif any(w in lowered for w in analytics_words):
             intent = "analytics"
 
@@ -169,6 +172,11 @@ def intent_node(state: GraphState) -> GraphState:
         )
         result["answer_text"] = greeting_text
         result["messages"] = [AIMessage(content=greeting_text)]
+        result["is_satisfied"] = True
+    elif intent == "end":
+        exit_text = "Thank you for using the Shipment Q&A Bot. Your session has been closed. Goodbye!"
+        result["answer_text"] = exit_text
+        result["messages"] = [AIMessage(content=exit_text)]
         result["is_satisfied"] = True
 
     return result
