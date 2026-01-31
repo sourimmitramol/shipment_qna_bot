@@ -14,3 +14,5 @@ tests/test_static_overview.py::test_static_overview_starlink_snippet PASSED [ 83
 tests/test_static_overview.py::test_static_overview_social_channel PASSED [100%]
 
 ============================== 6 passed in 1.11s ==============================
+
+uv run uvicorn shipment_qna_bot.api.main:app --reload --host=127.0.0.1 --port=8000

@@ -39,8 +39,8 @@ class PandasAnalyticsEngine:
             - 'error': Error message if failed
             - 'success': Bool
         """
-        path_str = f"Execution Code:\n{code[:500]}..."
         logger.info(f"Pandas Engine executing code on DF with shape {df.shape}")
+        logger.info(f"Pandas Code:\n{code}")
 
         # Trap stdout
         output_buffer = io.StringIO()
