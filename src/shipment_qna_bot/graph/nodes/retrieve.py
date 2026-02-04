@@ -200,6 +200,7 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
             return datetime.now(timezone.utc)
 
         now_utc = _get_now_utc()
+        start_of_today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
 
         def _load_metadata(hit: Dict[str, Any]) -> Dict[str, Any]:
             raw = hit.get("metadata_json")
@@ -254,9 +255,9 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     if not dt_val:
                         ok = False
                     elif direction == "next":
-                        ok = dt_val >= now_utc and dt_val < (
-                            now_utc + timedelta(days=days)
-                        )
+                        # Calendar-day window: include today, end at start_of_today + N days (exclusive).
+                        window_end = start_of_today + timedelta(days=days)
+                        ok = dt_val >= start_of_today and dt_val < window_end
 
                 delay_rule = post_filter.get("delay")
                 if ok and delay_rule:
