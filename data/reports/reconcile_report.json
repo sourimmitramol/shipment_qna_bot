@@ -1,0 +1,10 @@
+{
+  "extra_in_index": 0,
+  "extra_in_manifest": 0,
+  "index_count": 19073,
+  "index_name": "shipment-idx",
+  "jsonl_count": 19169,
+  "manifest_count": 19064,
+  "missing_in_index": 96,
+  "missing_in_manifest": 105
+}
