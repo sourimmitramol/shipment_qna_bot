@@ -103,10 +103,10 @@ ANALYTICS_METADATA = {
     #     "desc": "Definition for revised eta fd date.",
     #     "type": "datetime"
     # },
-    # "predictive_eta_fd_date": {
-    #     "desc": "Definition for predictive eta fd date.",
-    #     "type": "datetime"
-    # },
+    "predictive_dp_date": {
+        "desc": "Predictive Discharge Port Date. DEFAULT column for arrival/delay calculations unless Final Destination (FD) is specified.",
+        "type": "datetime"
+    },
     "cargo_receiveds_date": {
         "desc": "Definition for cargo receiveds date.",
         "type": "string",
@@ -291,7 +291,7 @@ ANALYTICS_METADATA = {
     },
     "consignee_name": {"desc": "Definition for consignee name.", "type": "string"},
     "optimal_ata_dp_date": {
-        "desc": "The best available date for arrival at discharge port.",
+        "desc": "The best available date for arrival at discharge port, DEFAULT column for arrival/delay calculations unless Final Destination (FD) is specified.",
         "type": "datetime",
     },
     "optimal_eta_fd_date": {

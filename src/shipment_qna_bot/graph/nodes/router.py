@@ -6,7 +6,7 @@ from shipment_qna_bot.logging.logger import logger
 
 def route_node(
     state: GraphState,
-) -> Literal["retrieval", "analytics", "static_info", "end"]:
+) -> Literal["retrieval", "analytics", "static_info", "clarification", "end"]:
     """
     Decides the next path based on intent.
     """
@@ -16,6 +16,8 @@ def route_node(
         return "static_info"
     if intent == "analytics":
         return "analytics"
+    if intent == "clarification":
+        return "clarification"
     elif intent in ["retrieval", "status", "eta", "delay"]:
         # We group status/eta/delay under retrieval for backward compatibility if needed,
         # but LLM now primarily outputs 'retrieval' or 'greeting'.

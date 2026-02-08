@@ -6,6 +6,7 @@ from langgraph.graph import END, StateGraph
 from shipment_qna_bot.graph.nodes.analytics_planner import \
     analytics_planner_node
 from shipment_qna_bot.graph.nodes.answer import answer_node
+from shipment_qna_bot.graph.nodes.clarification import clarification_node
 from shipment_qna_bot.graph.nodes.extractor import extractor_node
 from shipment_qna_bot.graph.nodes.intent import intent_node
 from shipment_qna_bot.graph.nodes.judge import judge_node
@@ -51,6 +52,7 @@ def build_graph():
     workflow.add_node("answer", answer_node)
     workflow.add_node("judge", judge_node)
     workflow.add_node("static_info", static_greet_info_node)
+    workflow.add_node("clarification", clarification_node)
 
     # --- Add Edges ---
     # Start -> Normalizer
@@ -70,6 +72,7 @@ def build_graph():
             "retrieval": "planner",
             "analytics": "analytics_planner",
             "static_info": "static_info",
+            "clarification": "clarification",
             "end": END,
         },
     )
@@ -82,6 +85,7 @@ def build_graph():
     workflow.add_edge("retrieve", "answer")
     workflow.add_edge("answer", "judge")
     workflow.add_edge("static_info", END)
+    workflow.add_edge("clarification", END)
 
     # Reflective Loop
     workflow.add_conditional_edges(

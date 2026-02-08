@@ -89,13 +89,14 @@ def intent_node(state: GraphState) -> GraphState:
     system_prompt = (
         "You are an intent classifier for a Logistics Shipment Q&A Bot.\n"
         "Analyze the user's input and extract:\n"
-        "1. Primary Intent: One of ['retrieval', 'analytics', 'greeting', 'company_overview', 'end'].\n"
-        "   - 'analytics': Use for general queries asking for counts, totals, sums, unique lists, or aggregations (e.g., 'How many...', 'Total weight...', 'Which carriers...', 'List all suppliers').\n"
-        "   - 'retrieval': Use for queries asking about specific shipments, usually providing an ID (Container, PO, Booking, OBL) or asking for status of a subset of shipments.\n"
+        "1. Primary Intent: One of ['retrieval', 'analytics', 'greeting', 'company_overview', 'clarification', 'end'].\n"
+        "   - 'analytics': Use for general aggregating queries, summaries, counts, or listing distinct values. Examples: 'How many...', 'Total weight...', 'Which carriers...', 'List all suppliers', 'Show delay statistics', 'Check FD dates'.\n"
+        "   - 'retrieval': Use for specific single-shipment lookup where an ID is provided (Container, PO, Booking, OBL) or asking for status of a specific subset. If the user asks for a 'list' or 'count' without specific IDs, prefer 'analytics'.\n"
+        "   - 'clarification': Use IF AND ONLY IF the user's query is too vague, ambiguous, or lacks necessary context to decide between analytics/retrieval or to perform the action. Examples: 'Show me dates' (Which dates?), 'List shipments' (All of them? Too generic).\n"
         "   - 'greeting': Use for 'hi', 'hello', etc.\n"
         "   - 'company_overview': Use for questions about the company itself.\n"
         "   - 'end': Use for 'bye', 'thank you', etc.\n"
-        "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'eta_window', 'hot']).\n"
+        "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'eta_window', 'hot', 'fd', 'in-cd']).\n"
         "3. Sentiment: One of ['positive', 'neutral', 'negative'].\n\n"
         "Output JSON ONLY:\n"
         "{\n"
@@ -145,6 +146,7 @@ def intent_node(state: GraphState) -> GraphState:
             "analytics",
             "greeting",
             "company_overview",
+            "clarification",
             "end",
         ]
         if intent not in valid_intents:
