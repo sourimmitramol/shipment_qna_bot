@@ -26,9 +26,37 @@ def clarification_node(state: GraphState) -> GraphState:
         intent="clarification",
     )
 
-    with log_node_execution("Clarification", {"intent": "clarification"}):
+    with log_node_execution(
+        "Clarification", {"intent": "clarification"}, state_ref=state
+    ):
         question = state.get("question_raw") or ""
         history = state.get("messages") or []
+
+        topic_shift = state.get("topic_shift_candidate")
+        if isinstance(topic_shift, dict) and topic_shift:
+            raw_q = topic_shift.get("raw") or question
+            norm_q = topic_shift.get("normalized") or state.get("normalized_question") or question
+            added = topic_shift.get("added") or []
+            reason = ", ".join(added) if added else "prior context"
+
+            clarification_text = (
+                "I want to confirm the scope before running analytics.\n\n"
+                f"I can interpret your question in two ways ({reason} was added from earlier context):\n"
+                f"1) Use previous context: {norm_q}\n"
+                f"2) New topic (ignore previous context): {raw_q}\n\n"
+                "Reply with 1 or 2. You can also rephrase your question explicitly."
+            )
+
+            state["answer_text"] = clarification_text
+            state["messages"] = [AIMessage(content=clarification_text)]
+            state["is_satisfied"] = True
+            state["intent"] = "clarification"
+            state["pending_topic_shift"] = {
+                "raw": raw_q,
+                "normalized": norm_q,
+            }
+            state["topic_shift_candidate"] = None
+            return state
 
         # Construct Prompt
         system_prompt = (
@@ -62,6 +90,7 @@ def clarification_node(state: GraphState) -> GraphState:
             state["messages"] = [AIMessage(content=clarification_text)]
             # We treat this as 'satisfied' because we want to stop execution and wait for user input.
             state["is_satisfied"] = True
+            state["intent"] = "clarification"
 
         except Exception as e:
             logger.error(f"Clarification generation failed: {e}")
@@ -69,5 +98,6 @@ def clarification_node(state: GraphState) -> GraphState:
                 "I'm not sure I understood. Could you please provide more details?"
             )
             state["is_satisfied"] = True
+            state["intent"] = "clarification"
 
     return state

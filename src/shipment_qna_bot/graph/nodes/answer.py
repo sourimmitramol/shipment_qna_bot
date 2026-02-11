@@ -35,6 +35,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "intent": state.get("intent", "-"),
             "hits_count": len(state.get("hits") or []),
         },
+        state_ref=state,
     ):
         hits = cast(List[Dict[str, Any]], state.get("hits") or [])
         analytics = cast(Dict[str, Any], state.get("idx_analytics") or {})

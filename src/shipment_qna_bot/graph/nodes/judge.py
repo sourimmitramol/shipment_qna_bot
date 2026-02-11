@@ -33,6 +33,7 @@ def judge_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "intent": state.get("intent", "-"),
             "retry_count": state.get("retry_count", 0),
         },
+        state_ref=state,
     ):
         question = state.get("question_raw") or ""
         answer = state.get("answer_text") or ""

@@ -66,21 +66,79 @@ class GraphTracingCallbackHandler(BaseCallbackHandler):
 
 
 from contextlib import contextmanager
-from typing import Generator
+from typing import Any, Dict, Generator, Optional
 
 
 @contextmanager
+def _truncate(val: Any, limit: int = 160) -> str:
+    if val is None:
+        return ""
+    s = str(val)
+    if len(s) <= limit:
+        return s
+    return s[:limit] + "..."
+
+
+def _summarize_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(state, dict):
+        return {"state_type": str(type(state))}
+
+    idx_analytics = state.get("idx_analytics") or {}
+    table_spec = state.get("table_spec") or {}
+    chart_spec = state.get("chart_spec") or {}
+    topic_shift_candidate = state.get("topic_shift_candidate") or {}
+    pending_topic_shift = state.get("pending_topic_shift") or {}
+
+    return {
+        "question_raw": _truncate(state.get("question_raw")),
+        "normalized_question": _truncate(state.get("normalized_question")),
+        "intent": state.get("intent"),
+        "sub_intents": state.get("sub_intents"),
+        "retry_count": state.get("retry_count"),
+        "max_retries": state.get("max_retries"),
+        "is_satisfied": state.get("is_satisfied"),
+        "messages_count": len(state.get("messages") or []),
+        "hits_count": len(state.get("hits") or []),
+        "idx_analytics_count": idx_analytics.get("count")
+        if isinstance(idx_analytics, dict)
+        else None,
+        "citations_count": len(state.get("citations") or []),
+        "errors_count": len(state.get("errors") or []),
+        "notices_count": len(state.get("notices") or []),
+        "table_rows": len(table_spec.get("rows") or [])
+        if isinstance(table_spec, dict)
+        else None,
+        "chart_kind": chart_spec.get("kind") if isinstance(chart_spec, dict) else None,
+        "topic_shift_added": topic_shift_candidate.get("added")
+        if isinstance(topic_shift_candidate, dict)
+        else None,
+        "pending_topic_shift": True if pending_topic_shift else False,
+    }
+
+
 def log_node_execution(
-    node_name: str, context: Optional[Dict[str, Any]] = None
+    node_name: str,
+    context: Optional[Dict[str, Any]] = None,
+    state_ref: Optional[Dict[str, Any]] = None,
 ) -> Generator[None, None, None]:
     """
     Context manager to log the start and end of a graph node execution.
     """
     context = context or {}
     logger.info(f"Node execution started: {node_name}", extra={"extra_data": context})
+    if state_ref is not None:
+        logger.info(
+            f"Node input: {node_name}",
+            extra={"extra_data": _summarize_state(state_ref)},
+        )
     try:
         yield
         logger.info(f"Node execution completed: {node_name}")
+        if state_ref is not None:
+            logger.info(
+                f"Node output: {node_name}",
+                extra={"extra_data": _summarize_state(state_ref)},
+            )
     except Exception as e:
         logger.error(f"Node execution failed: {node_name} - {e}", exc_info=True)
         raise

@@ -64,6 +64,8 @@ class GraphState(TypedDict):
     max_retries: int
     is_satisfied: bool
     reflection_feedback: Optional[str]
+    pending_topic_shift: Optional[Dict[str, Any]]
+    topic_shift_candidate: Optional[Dict[str, Any]]
 
     # --- Metrics ---
     usage_metadata: Dict[

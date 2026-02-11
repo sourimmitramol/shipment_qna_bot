@@ -51,7 +51,9 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         intent=state.get("intent", "-"),
     )
 
-    with log_node_execution("AnalyticsPlanner", {"intent": state.get("intent")}):
+    with log_node_execution(
+        "AnalyticsPlanner", {"intent": state.get("intent")}, state_ref=state
+    ):
         q = (
             state.get("normalized_question") or state.get("question_raw") or ""
         ).strip()

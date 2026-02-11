@@ -34,6 +34,7 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "intent": state.get("intent", "-"),
             "question": (state.get("normalized_question") or "-")[:120],
         },
+        state_ref=state,
     ):
         q = (
             state.get("normalized_question") or state.get("question_raw") or ""

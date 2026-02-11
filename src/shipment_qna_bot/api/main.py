@@ -2,6 +2,7 @@
 #################
 # call sign for running the app
 # uv run uvicorn shipment_qna_bot.api.main:app --reload --host=127.0.0.1 --port=8000
+# https://shipmentqnabot-dgh3cjgzdzbyc3f0.eastus2-01.azurewebsites.net/
 #################
 import os
 import uuid

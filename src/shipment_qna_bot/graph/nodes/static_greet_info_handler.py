@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from langchain_core.messages import AIMessage
 
 from shipment_qna_bot.graph.state import GraphState
+from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.utils.runtime import is_test_mode
@@ -653,38 +654,45 @@ def build_static_overview_answer(
 
 
 def static_greet_info_node(state: GraphState) -> GraphState:
-    question = state.get("normalized_question") or state.get("question_raw") or ""
-    extracted = state.get("extracted_ids") or {}
-    locations = extracted.get("location") or []
+    with log_node_execution(
+        "StaticInfo",
+        {"question": (state.get("normalized_question") or state.get("question_raw") or "")[:120]},
+        state_ref=state,
+    ):
+        question = state.get("normalized_question") or state.get("question_raw") or ""
+        extracted = state.get("extracted_ids") or {}
+        locations = extracted.get("location") or []
 
-    # 1. Get raw context from the markdown file based on keywords
-    raw_context = build_static_overview_answer(question, locations)
+        # 1. Get raw context from the markdown file based on keywords
+        raw_context = build_static_overview_answer(question, locations)
 
-    # 2. Refine the answer using LLM for better context awareness
-    synthesis = _synthesize_static_answer(question, raw_context)
-    answer_text = synthesis["answer"]
-    usage = synthesis["usage"]
+        # 2. Refine the answer using LLM for better context awareness
+        synthesis = _synthesize_static_answer(question, raw_context)
+        answer_text = synthesis["answer"]
+        usage = synthesis["usage"]
 
-    # 3. Update usage metadata
-    usage_metadata = state.get("usage_metadata") or {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-    }
-    for k, v in usage.items():
-        usage_metadata[k] = usage_metadata.get(k, 0) + v
+        # 3. Update usage metadata
+        usage_metadata = state.get("usage_metadata") or {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        for k, v in usage.items():
+            usage_metadata[k] = usage_metadata.get(k, 0) + v
 
-    result: GraphState = {
-        "intent": "company_overview",
-        "answer_text": answer_text,
-        "is_satisfied": True,
-        "messages": [AIMessage(content=answer_text)],
-        "usage_metadata": usage_metadata,
-    }
+        state.update(
+            {
+                "intent": "company_overview",
+                "answer_text": answer_text,
+                "is_satisfied": True,
+                "messages": [AIMessage(content=answer_text)],
+                "usage_metadata": usage_metadata,
+            }
+        )
 
-    if "not configured yet" in answer_text.lower():
-        result["notices"] = [
-            "Static overview file missing or empty. Update docs/overview_info.md.",
-        ]
+        if "not configured yet" in answer_text.lower():
+            state["notices"] = [
+                "Static overview file missing or empty. Update docs/overview_info.md.",
+            ]
 
-    return result
+        return state

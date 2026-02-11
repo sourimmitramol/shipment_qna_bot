@@ -64,6 +64,13 @@ class PandasAnalyticsEngine:
             # If result is a dataframe or series, convert to something json-serializable/string
             # for the agent to consume easily
             if isinstance(result_val, (pd.DataFrame, pd.Series)):
+                if result_val.empty:
+                    return {
+                        "success": True,
+                        "output": output_buffer.getvalue(),
+                        "result": "",
+                        "final_answer": "No rows matched your filters.",
+                    }
                 result_export = result_val.to_markdown()
             else:
                 result_export = str(result_val) if result_val is not None else ""

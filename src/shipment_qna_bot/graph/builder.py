@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -27,7 +28,11 @@ def should_continue(state: GraphState):
     if state.get("is_satisfied"):
         return "end"
 
-    if (state.get("retry_count") or 0) >= (state.get("max_retries") or 3):
+    max_retries = state.get("max_retries")
+    if max_retries is None:
+        max_retries = int(os.getenv("GRAPH_MAX_RETRIES", "2"))
+
+    if (state.get("retry_count") or 0) >= max_retries:
         return "end"
 
     intent = state.get("intent")
@@ -120,7 +125,7 @@ def run_graph(input_state: dict) -> dict:
     if "retry_count" not in input_state:
         input_state["retry_count"] = 0
     if "max_retries" not in input_state:
-        input_state["max_retries"] = 3
+        input_state["max_retries"] = int(os.getenv("GRAPH_MAX_RETRIES", "2"))
     if "is_satisfied" not in input_state:
         input_state["is_satisfied"] = False
     if "usage_metadata" not in input_state:
