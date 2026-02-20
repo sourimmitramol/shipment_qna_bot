@@ -1,0 +1,50 @@
+name: Block Dev Artifacts On Main
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  block-dev-only-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect forbidden paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            RANGE="origin/${GITHUB_BASE_REF}...HEAD"
+          else
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.sha }}"
+            if [[ "${BEFORE}" == "0000000000000000000000000000000000000000" ]]; then
+              ROOT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
+              RANGE="${ROOT}..${AFTER}"
+            else
+              RANGE="${BEFORE}..${AFTER}"
+            fi
+          fi
+
+          echo "Checking changed files in range: ${RANGE}"
+          CHANGED_FILES="$(git diff --name-only "${RANGE}" || true)"
+          echo "${CHANGED_FILES}"
+
+          FORBIDDEN="$(echo "${CHANGED_FILES}" | grep -E '^(\\.agent/|backups/)' || true)"
+
+          if [[ -n "${FORBIDDEN}" ]]; then
+            echo "Error: Dev-only paths are not allowed on main."
+            echo "${FORBIDDEN}"
+            exit 1
+          fi
+
+          echo "OK: No forbidden dev-only paths detected."
