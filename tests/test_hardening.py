@@ -1,7 +1,9 @@
 import pandas as pd
 
 from shipment_qna_bot.graph.nodes.clarification import clarification_node
+from shipment_qna_bot.graph.nodes.intent import intent_node
 from shipment_qna_bot.graph.nodes.judge import judge_node
+from shipment_qna_bot.graph.nodes.normalizer import normalize_node
 from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
     should_handle_overview
 from shipment_qna_bot.tools.pandas_engine import PandasAnalyticsEngine
@@ -52,6 +54,64 @@ def test_clarification_adds_two_scope_options():
     assert "1)" in (new_state.get("answer_text") or "")
     assert "2)" in (new_state.get("answer_text") or "")
     assert isinstance(new_state.get("pending_topic_shift"), dict)
+
+
+def test_clarification_adds_analytics_scope_options():
+    state = {
+        "question_raw": "which are hot?",
+        "normalized_question": "which are hot?",
+        "messages": [],
+        "intent": "analytics",
+        "topic_shift_candidate": None,
+        "analytics_scope_candidate": {
+            "raw_question": "which are hot?",
+            "normalized_question": "which are hot?",
+            "previous_result_count": 12,
+        },
+    }
+
+    new_state = clarification_node(state)
+
+    assert new_state["intent"] == "clarification"
+    assert new_state["is_satisfied"] is True
+    assert "previous analytics result" in (new_state.get("answer_text") or "").lower()
+    assert isinstance(new_state.get("pending_analytics_scope"), dict)
+
+
+def test_normalizer_uses_previous_result_scope_hint():
+    state = {
+        "question_raw": "which are hot from above list",
+        "messages": [],
+        "last_analytics_result_selector": {
+            "kind": "id_sets",
+            "ids": {"container_number": ["SEGU5935510"]},
+            "row_count": 1,
+        },
+        "last_analytics_result_count": 1,
+    }
+
+    new_state = normalize_node(state)
+
+    assert new_state.get("analytics_context_mode") == "previous_result"
+    assert new_state.get("analytics_scope_candidate") is None
+
+
+def test_intent_forces_analytics_for_association_queries():
+    state = {
+        "question_raw": "analyse to show container associated with ABC123",
+        "normalized_question": "analyse to show container associated with abc123",
+        "extracted_ids": {
+            "container_number": [],
+            "po_numbers": ["ABC123"],
+            "booking_numbers": [],
+            "obl_nos": [],
+        },
+    }
+
+    new_state = intent_node(state)
+
+    assert new_state["intent"] == "analytics"
+    assert "association_lookup" in (new_state.get("sub_intents") or [])
 
 
 def test_judge_retries_analytics_failure_without_hits():

@@ -159,10 +159,12 @@ class PandasAnalyticsEngine:
 
             filtered_rows = None
             filtered_preview = ""
+            filtered_dataframe: Optional[pd.DataFrame] = None
             df_filtered = local_scope.get("df_filtered")
             if isinstance(df_filtered, pd.DataFrame):
                 df_filtered = self._sort_df_latest_first(df_filtered)
                 local_scope["df_filtered"] = df_filtered
+                filtered_dataframe = df_filtered
                 filtered_rows = len(df_filtered)
                 if filtered_rows > 0:
                     preferred_cols = [
@@ -186,6 +188,7 @@ class PandasAnalyticsEngine:
 
             # If result is a dataframe or series, convert to something json-serializable/string
             # for the agent to consume easily
+            result_dataframe: Optional[pd.DataFrame] = None
             if isinstance(result_val, (pd.DataFrame, pd.Series)):
                 if result_val.empty:
                     return {
@@ -193,9 +196,16 @@ class PandasAnalyticsEngine:
                         "output": output_buffer.getvalue(),
                         "result": "",
                         "final_answer": "No rows matched your filters.",
+                        "filtered_rows": filtered_rows,
+                        "filtered_preview": filtered_preview,
+                        "filtered_dataframe": filtered_dataframe,
+                        "result_dataframe": (
+                            result_val if isinstance(result_val, pd.DataFrame) else None
+                        ),
                     }
                 if isinstance(result_val, pd.DataFrame):
                     result_val = self._sort_df_latest_first(result_val)
+                    result_dataframe = result_val
                 result_export = result_val.to_markdown()
             else:
                 result_export = str(result_val) if result_val is not None else ""
@@ -211,6 +221,8 @@ class PandasAnalyticsEngine:
                 "result_type": result_type,
                 "filtered_rows": filtered_rows,
                 "filtered_preview": filtered_preview,
+                "filtered_dataframe": filtered_dataframe,
+                "result_dataframe": result_dataframe,
             }
 
         except Exception as e:

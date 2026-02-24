@@ -2,6 +2,8 @@ import json  # type: ignore
 import re
 from typing import Any, Dict, List, Optional  # type: ignore
 
+import pandas as pd
+
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.analytics_metadata import (ANALYTICS_METADATA,
@@ -61,6 +63,135 @@ def _merge_usage(state: Dict[str, Any], usage: Optional[Dict[str, Any]]) -> None
         if isinstance(v, (int, float)):
             usage_metadata[k] = usage_metadata.get(k, 0) + v
     state["usage_metadata"] = usage_metadata
+
+
+def _normalize_selector_tokens(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+
+    out: List[str] = []
+    for item in raw_items:
+        if item is None:
+            continue
+        if isinstance(item, str):
+            text = item.strip()
+            if not text:
+                continue
+            if text.startswith("[") and text.endswith("]"):
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        for p in parsed:
+                            token = str(p).strip().upper()
+                            if token:
+                                out.append(token)
+                        continue
+                except Exception:
+                    pass
+            if "," in text:
+                for part in text.split(","):
+                    token = part.strip().upper()
+                    if token:
+                        out.append(token)
+                continue
+            out.append(text.upper())
+            continue
+        token = str(item).strip().upper()
+        if token:
+            out.append(token)
+
+    # Deduplicate preserving order
+    seen = set()
+    return [x for x in out if not (x in seen or seen.add(x))]
+
+
+def _extract_followup_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    candidate_df = exec_result.get("filtered_dataframe")
+    if not isinstance(candidate_df, pd.DataFrame):
+        alt_df = exec_result.get("result_dataframe")
+        candidate_df = alt_df if isinstance(alt_df, pd.DataFrame) else None
+
+    if candidate_df is None or candidate_df.empty:
+        return None
+
+    ids: Dict[str, List[str]] = {}
+    for col in [
+        "document_id",
+        "doc_id",
+        "container_number",
+        "po_numbers",
+        "booking_numbers",
+        "obl_nos",
+    ]:
+        if col not in candidate_df.columns:
+            continue
+        values: List[str] = []
+        for val in candidate_df[col].tolist():
+            values.extend(_normalize_selector_tokens(val))
+        if values:
+            # Deduplicate preserving order
+            seen = set()
+            ids[col] = [x for x in values if not (x in seen or seen.add(x))]
+
+    if not ids:
+        return None
+
+    return {
+        "kind": "id_sets",
+        "ids": ids,
+        "row_count": int(len(candidate_df)),
+    }
+
+
+def _apply_followup_selector(
+    df: pd.DataFrame, selector: Optional[Dict[str, Any]]
+) -> Optional[pd.DataFrame]:
+    if selector is None or not isinstance(selector, dict):
+        return None
+    if df.empty:
+        return df.copy()
+
+    selector_ids = selector.get("ids")
+    if not isinstance(selector_ids, dict):
+        return None
+
+    mask = pd.Series(False, index=df.index)
+    used_rule = False
+
+    for col in ["document_id", "doc_id", "container_number"]:
+        values = selector_ids.get(col)
+        if col not in df.columns or not isinstance(values, list) or not values:
+            continue
+        allowed = {str(v).strip().upper() for v in values if str(v).strip()}
+        if not allowed:
+            continue
+        col_series = df[col].astype("string").str.upper()
+        mask = mask | col_series.isin(allowed)
+        used_rule = True
+
+    for col in ["po_numbers", "booking_numbers", "obl_nos"]:
+        values = selector_ids.get(col)
+        if col not in df.columns or not isinstance(values, list) or not values:
+            continue
+        allowed = {str(v).strip().upper() for v in values if str(v).strip()}
+        if not allowed:
+            continue
+
+        def _row_match(val: Any) -> bool:
+            tokens = _normalize_selector_tokens(val)
+            return bool(set(tokens) & allowed)
+
+        mask = mask | df[col].apply(_row_match)
+        used_rule = True
+
+    if not used_rule:
+        return None
+
+    return df.loc[mask].copy()
 
 
 def _repair_generated_code(
@@ -132,6 +263,9 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             state.get("normalized_question") or state.get("question_raw") or ""
         ).strip()
         consignee_codes = state.get("consignee_codes") or []  # type: ignore
+        analytics_context_mode = str(
+            state.get("analytics_context_mode") or "session"
+        ).strip()
 
         # 0. Safety Check
         if not consignee_codes:
@@ -152,6 +286,40 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 state["is_satisfied"] = True
                 return state
 
+            if analytics_context_mode == "previous_result":
+                scoped_df = _apply_followup_selector(
+                    df,
+                    (
+                        state.get("last_analytics_result_selector")
+                        if isinstance(state.get("last_analytics_result_selector"), dict)
+                        else None
+                    ),
+                )
+                if scoped_df is None:
+                    state["answer_text"] = (
+                        "I couldn't reuse the previous analytics result list for this follow-up. "
+                        "Please rerun the previous list query or choose the full session scope."
+                    )
+                    state["is_satisfied"] = True
+                    state.setdefault("notices", []).append(
+                        "Previous analytics result subset could not be reconstructed."
+                    )
+                    return state
+                if scoped_df.empty:
+                    state["answer_text"] = (
+                        "The previous analytics result list no longer matches any rows in the current session data. "
+                        "Please rerun the previous query."
+                    )
+                    state["is_satisfied"] = True
+                    state.setdefault("notices", []).append(
+                        "Previous analytics result subset resolved to 0 rows."
+                    )
+                    return state
+                df = scoped_df
+                state.setdefault("notices", []).append(
+                    f"Applied previous analytics result scope ({len(df)} rows)."
+                )
+
         except Exception as e:
             logger.error(f"Analytics Data Load Failed: {e}")
             state.setdefault("errors", []).append(f"Data Load Error: {e}")
@@ -166,7 +334,12 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         columns = list(df.columns)
         # Head sample (first 5 rows) to help LLM understand values
         head_sample = df.head(5).to_markdown(index=False)
-        shape_info = f"Rows: {df.shape[0]}, Columns: {df.shape[1]}"
+        scope_label = (
+            "previous analytics result subset"
+            if analytics_context_mode == "previous_result"
+            else "authorized session scope"
+        )
+        shape_info = f"Rows: {df.shape[0]}, Columns: {df.shape[1]}, Execution Scope: {scope_label}"
 
         # Dynamic Column Reference
         # Load Ready Reference if available
@@ -211,6 +384,7 @@ Your goal is to write Python code to answer the user's question using `df`.
 
 ## Context
 Today's Date: {state.get('today_date')}
+Execution Scope: {scope_label}
 
 ## Key Column Reference
 {col_ref}
@@ -362,6 +536,7 @@ result = df_filtered[cols]
             result_type = exec_result.get("result_type")
             filtered_rows = exec_result.get("filtered_rows")
             filtered_preview = exec_result.get("filtered_preview") or ""
+            followup_selector = _extract_followup_selector(exec_result)
 
             logger.info(
                 "Analytics result rows=%s type=%s",
@@ -386,6 +561,24 @@ result = df_filtered[cols]
             state["is_satisfied"] = True
             state["analytics_last_error"] = None
             state["analytics_attempt_count"] = exec_attempts
+            state["pending_analytics_scope"] = None
+            state["analytics_scope_candidate"] = None
+            state["last_analytics_question"] = q
+
+            if followup_selector:
+                state["last_analytics_result_selector"] = followup_selector
+                state["last_analytics_result_count"] = int(
+                    followup_selector.get("row_count") or 0
+                )
+                logger.info(
+                    "Stored analytics follow-up selector rows=%s keys=%s",
+                    state["last_analytics_result_count"],
+                    list((followup_selector.get("ids") or {}).keys()),
+                    extra={"step": "NODE:AnalyticsPlanner"},
+                )
+            else:
+                state["last_analytics_result_selector"] = None
+                state["last_analytics_result_count"] = None
 
             # TODO: If we want to pass chart specs, we'd parse that here.
         else:
