@@ -16,3 +16,6 @@ def is_chart_enabled() -> bool:
 
 def is_weather_enabled() -> bool:
     return is_feature_enabled("WEATHER", default=True)
+
+def is_news_enabled() -> bool:
+    return is_feature_enabled("NEWS", default=True)

@@ -14,12 +14,14 @@ from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
 from shipment_qna_bot.tools.azure_openai_embeddings import AzureOpenAIEmbeddingsClient
 from shipment_qna_bot.tools.weather_tool import WeatherTool
-from shipment_qna_bot.utils.config import is_weather_enabled
+from shipment_qna_bot.tools.news_tool import NewsTool
+from shipment_qna_bot.utils.config import is_weather_enabled, is_news_enabled
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _SEARCH: Optional[AzureAISearchTool] = None
 _EMBED: Optional[AzureOpenAIEmbeddingsClient] = None
 _WEATHER: Optional[WeatherTool] = None
+_NEWS: Optional[NewsTool] = None
 
 _FILTER_FIELDS = {
     "container_number",
@@ -174,6 +176,45 @@ def _fetch_weather_alerts(hits: list[Dict[str, Any]], state: Dict[str, Any]) -> 
             msg = f"Weather Update for {res['location']} ({res.get('country','')}): {condition}, {temp}°C, Wind: {wind}km/h."
             state.setdefault("notices", []).append(msg)
             logger.info(f"Added weather notice for {loc}")
+
+
+def _get_news_tool() -> NewsTool:
+    global _NEWS
+    if _NEWS is None:
+        _NEWS = NewsTool()
+    return _NEWS
+
+
+def _fetch_news_impact(hits: list[Dict[str, Any]], state: Dict[str, Any]) -> None:
+    """
+    Fetches logistics news for unique carriers and ports in hits.
+    """
+    if not is_news_enabled() or "news" not in (state.get("sub_intents") or []):
+        return
+
+    keywords = set()
+    for h in hits[:5]:
+        # Extract meaningful keywords for news search
+        for field in ["discharge_port", "true_carrier_scac_name", "final_carrier_name"]:
+            val = h.get(field)
+            if val and isinstance(val, str) and len(val) > 3:
+                # Clean up carrier names for better search
+                clean_val = re.sub(r"\b(Inc|Ltd|Corp|Co|Shipping|Line)\b", "", val, flags=re.I).strip()
+                if clean_val:
+                    keywords.add(clean_val)
+
+    if not keywords:
+        return
+
+    news_tool = _get_news_tool()
+    # Limit to top 3 keywords to avoid too much noise
+    search_terms = sorted(list(keywords))[:3]
+    articles = news_tool.fetch_news(search_terms, limit=3)
+    
+    for art in articles:
+        msg = f"News Impact ({art['source']}): {art['title']} - Potential impact on shipments involving {', '.join(search_terms)}."
+        state.setdefault("notices", []).append(msg)
+        logger.info(f"Added news notice from {art['source']}")
 
 
 def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -397,6 +438,9 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
             # Weather Enrichment
             _fetch_weather_alerts(hits, state)
+
+            # News Impact Enrichment
+            _fetch_news_impact(hits, state)
 
         except Exception as e:
             error_msg = str(e)
