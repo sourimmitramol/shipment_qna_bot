@@ -844,11 +844,15 @@
             if (role === 'bot') {
                 let renderText = text || '';
                 let fallbackTable = null;
-                const allowAnalyticsRender = String(intent || '').toLowerCase() === 'analytics';
+                const isAnalyticsIntent = String(intent || '').toLowerCase() === 'analytics';
+                const hasStructuredPayload =
+                    (chart && Array.isArray(chart.data) && chart.data.length > 0) ||
+                    (table && Array.isArray(table.rows) && table.rows.length > 0);
+                const allowStructuredRender = isAnalyticsIntent || hasStructuredPayload;
 
-                if (allowAnalyticsRender && table && table.rows && table.rows.length > 0) {
+                if (allowStructuredRender && table && table.rows && table.rows.length > 0) {
                     renderText = stripMarkdownTables(renderText);
-                } else if (allowAnalyticsRender) {
+                } else if (allowStructuredRender) {
                     fallbackTable = parseSpaceAlignedTable(renderText);
                     if (fallbackTable) {
                         renderText = fallbackTable.leadText || '';
@@ -860,21 +864,21 @@
                 const contentDiv = document.createElement('div');
                 if (renderText.trim()) {
                     contentDiv.innerHTML = marked.parse(renderText);
-                    if (allowAnalyticsRender) {
+                    if (allowStructuredRender) {
                         normalizeRenderedTables(contentDiv);
                     }
                     div.appendChild(contentDiv);
                 }
 
-                if (allowAnalyticsRender && chart && Array.isArray(chart.data) && chart.data.length > 0) {
+                if (allowStructuredRender && chart && Array.isArray(chart.data) && chart.data.length > 0) {
                     const chartEl = renderChart(chart);
                     div.appendChild(chartEl);
                 }
 
-                if (allowAnalyticsRender && table && table.rows && table.rows.length > 0) {
+                if (allowStructuredRender && table && table.rows && table.rows.length > 0) {
                     const tableEl = renderTable(table, { analytics: true });
                     div.appendChild(tableEl);
-                } else if (allowAnalyticsRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
+                } else if (allowStructuredRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
                     const tableEl = renderTable(fallbackTable.table, { analytics: true });
                     div.appendChild(tableEl);
                 }
