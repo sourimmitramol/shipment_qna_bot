@@ -291,8 +291,41 @@ def test_analytics_applies_default_future_window_cap(monkeypatch, tmp_path):
     assert "default future window" in (new_state.get("answer_text") or "").lower()
     assert new_state["table_spec"] is not None
     rows = new_state["table_spec"]["rows"]
-    assert len(rows) == 2
-    assert {row["container_number"] for row in rows} == {"CONT_IN", "CONT_DELAY"}
+    assert len(rows) == 1
+    assert {row["container_number"] for row in rows} == {"CONT_IN"}
+
+
+def test_analytics_arriving_phrase_applies_future_and_not_arrived_cap(
+    monkeypatch, tmp_path
+):
+    parquet_path = _write_parquet_with_time_windows(tmp_path)
+
+    monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
+    monkeypatch.setattr(
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(parquet_path)
+    )
+    monkeypatch.setattr(
+        analytics_module,
+        "_get_chat",
+        lambda: _StubChatTool(
+            "SELECT container_number, po_numbers, discharge_port, best_eta_dp_date "
+            "FROM df WHERE discharge_port ILIKE '%los angeles%' "
+            "ORDER BY best_eta_dp_date DESC"
+        ),
+    )
+    monkeypatch.setattr(
+        analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+    )
+
+    new_state = analytics_module.analytics_planner_node(
+        _base_state("What are the POs arriving in Los Angeles?")
+    )
+
+    assert "default future window" in (new_state.get("answer_text") or "").lower()
+    assert new_state["table_spec"] is not None
+    rows = new_state["table_spec"]["rows"]
+    assert len(rows) == 1
+    assert rows[0]["container_number"] == "CONT_IN"
 
 
 def test_analytics_applies_default_past_window_cap(monkeypatch, tmp_path):

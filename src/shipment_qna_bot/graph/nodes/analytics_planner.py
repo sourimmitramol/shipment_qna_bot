@@ -72,8 +72,26 @@ def _contains_explicit_time_window(question: str) -> bool:
 
 def _is_future_event_question(question: str) -> bool:
     lowered = (question or "").lower()
-    future_markers = ["will", "upcoming", "coming", "to arrive", "to be delivered"]
-    event_markers = ["arrive", "arrival", "deliver", "delivery"]
+    if any(m in lowered for m in ["arrived", "received", "delivered"]):
+        return False
+    future_markers = [
+        "will",
+        "upcoming",
+        "coming",
+        "to arrive",
+        "to be delivered",
+        "arriving",
+        "delivering",
+        "expected",
+    ]
+    event_markers = [
+        "arrive",
+        "arrival",
+        "arriving",
+        "deliver",
+        "delivery",
+        "delivering",
+    ]
     return any(m in lowered for m in future_markers) and any(
         m in lowered for m in event_markers
     )
@@ -103,9 +121,43 @@ def _is_fd_context(question: str) -> bool:
     )
 
 
+def _sql_has_dp_context(sql: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(discharge_port|best_eta_dp_date|eta_dp_date|ata_dp_date|derived_ata_dp_date)\b",
+            sql or "",
+            re.I,
+        )
+    )
+
+
+def _sql_has_fd_context(sql: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(final_destination|best_eta_fd_date|eta_fd_date|delivery_to_consignee_date|empty_container_return_date)\b",
+            sql or "",
+            re.I,
+        )
+    )
+
+
 def _has_existing_column_constraint(sql: str, col_name: str) -> bool:
     return bool(
-        re.search(rf"\b{re.escape(col_name)}\b\s*(<=|>=|=|<|>|between)\b", sql, re.I)
+        re.search(
+            rf"\b{re.escape(col_name)}\b\s*(<=|>=|=|<|>|between)\b",
+            sql,
+            re.I,
+        )
+    )
+
+
+def _has_existing_null_constraint(sql: str, col_name: str) -> bool:
+    return bool(
+        re.search(
+            rf"\b{re.escape(col_name)}\b\s+is\s+(not\s+)?null\b",
+            sql,
+            re.I,
+        )
     )
 
 
@@ -138,7 +190,16 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
     lowered = (question or "").lower()
     if not any(
         k in lowered
-        for k in ["arrive", "arrival", "arrived", "deliver", "delivered", "received"]
+        for k in [
+            "arrive",
+            "arrival",
+            "arriving",
+            "arrived",
+            "deliver",
+            "delivering",
+            "delivered",
+            "received",
+        ]
     ):
         return sql, None
 
@@ -147,8 +208,8 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
     if not (is_future or is_past):
         return sql, None
 
-    fd_context = _is_fd_context(question)
-    dp_context = _is_dp_context(question)
+    fd_context = _is_fd_context(question) or _sql_has_fd_context(sql)
+    dp_context = _is_dp_context(question) or _sql_has_dp_context(sql)
     if not (fd_context or dp_context):
         return sql, None
 
@@ -158,7 +219,30 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
         )
         if _has_existing_column_constraint(sql, date_col):
             return sql, None
-        condition = f"{date_col} >= CURRENT_DATE AND {date_col} <= CURRENT_DATE + INTERVAL 30 DAY"
+        if fd_context and not dp_context:
+            if (
+                _has_existing_column_constraint(sql, "delivery_to_consignee_date")
+                or _has_existing_null_constraint(sql, "delivery_to_consignee_date")
+                or _has_existing_column_constraint(sql, "empty_container_return_date")
+                or _has_existing_null_constraint(sql, "empty_container_return_date")
+            ):
+                return sql, None
+            condition = (
+                "delivery_to_consignee_date IS NULL "
+                "AND empty_container_return_date IS NULL "
+                f"AND {date_col} >= CURRENT_DATE "
+                f"AND {date_col} <= CURRENT_DATE + INTERVAL 30 DAY"
+            )
+        else:
+            if _has_existing_column_constraint(
+                sql, "ata_dp_date"
+            ) or _has_existing_null_constraint(sql, "ata_dp_date"):
+                return sql, None
+            condition = (
+                "ata_dp_date IS NULL "
+                f"AND {date_col} >= CURRENT_DATE "
+                f"AND {date_col} <= CURRENT_DATE + INTERVAL 30 DAY"
+            )
         updated_sql, changed = _inject_filter_condition(sql, condition)
         if changed:
             note = (
