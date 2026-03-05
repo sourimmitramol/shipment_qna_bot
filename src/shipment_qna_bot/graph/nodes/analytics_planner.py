@@ -55,6 +55,196 @@ def _extract_sql_code(content: str) -> str:
     return content.strip()
 
 
+def _contains_explicit_time_window(question: str) -> bool:
+    lowered = (question or "").lower()
+
+    explicit_patterns = [
+        r"\b\d+\s*(day|days|week|weeks|month|months|year|years)\b",
+        r"\b(today|tomorrow|yesterday)\b",
+        r"\b(last|next|previous)\b",
+        r"\bbetween\b",
+        r"\bfrom\b.*\bto\b",
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
+    ]
+    return any(re.search(pattern, lowered) for pattern in explicit_patterns)
+
+
+def _is_future_event_question(question: str) -> bool:
+    lowered = (question or "").lower()
+    future_markers = ["will", "upcoming", "coming", "to arrive", "to be delivered"]
+    event_markers = ["arrive", "arrival", "deliver", "delivery"]
+    return any(m in lowered for m in future_markers) and any(
+        m in lowered for m in event_markers
+    )
+
+
+def _is_past_event_question(question: str) -> bool:
+    lowered = (question or "").lower()
+    if "will " in lowered:
+        return False
+    past_markers = ["arrived", "received", "delivered"]
+    return any(m in lowered for m in past_markers)
+
+
+def _is_dp_context(question: str) -> bool:
+    lowered = (question or "").lower()
+    return any(
+        marker in lowered
+        for marker in [" dp", "discharge", "port", "seaport", "harbor"]
+    )
+
+
+def _is_fd_context(question: str) -> bool:
+    lowered = (question or "").lower()
+    return any(
+        marker in lowered
+        for marker in [" fd", "final destination", "destination", "consignee", "place"]
+    )
+
+
+def _has_existing_column_constraint(sql: str, col_name: str) -> bool:
+    return bool(
+        re.search(rf"\b{re.escape(col_name)}\b\s*(<=|>=|=|<|>|between)\b", sql, re.I)
+    )
+
+
+def _inject_filter_condition(sql: str, condition: str) -> tuple[str, bool]:
+    base_sql = (sql or "").strip().rstrip(";")
+    if not base_sql or not re.match(r"(?is)^\s*select\b", base_sql):
+        return sql, False
+
+    split_match = re.search(r"\b(GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT)\b", base_sql, re.I)
+    if split_match:
+        pre = base_sql[: split_match.start()].rstrip()
+        post = base_sql[split_match.start() :].lstrip()
+    else:
+        pre = base_sql
+        post = ""
+
+    if re.search(r"\bWHERE\b", pre, re.I):
+        updated_pre = f"{pre} AND ({condition})"
+    else:
+        updated_pre = f"{pre} WHERE ({condition})"
+
+    updated_sql = updated_pre if not post else f"{updated_pre} {post}"
+    return updated_sql, True
+
+
+def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]]:
+    if _contains_explicit_time_window(question):
+        return sql, None
+
+    lowered = (question or "").lower()
+    if not any(
+        k in lowered
+        for k in ["arrive", "arrival", "arrived", "deliver", "delivered", "received"]
+    ):
+        return sql, None
+
+    is_future = _is_future_event_question(question)
+    is_past = _is_past_event_question(question)
+    if not (is_future or is_past):
+        return sql, None
+
+    fd_context = _is_fd_context(question)
+    dp_context = _is_dp_context(question)
+    if not (fd_context or dp_context):
+        return sql, None
+
+    if is_future:
+        date_col = (
+            "best_eta_fd_date" if fd_context and not dp_context else "best_eta_dp_date"
+        )
+        if _has_existing_column_constraint(sql, date_col):
+            return sql, None
+        condition = f"{date_col} >= CURRENT_DATE AND {date_col} <= CURRENT_DATE + INTERVAL 30 DAY"
+        updated_sql, changed = _inject_filter_condition(sql, condition)
+        if changed:
+            note = (
+                "Applied default future window: CURRENT_DATE to CURRENT_DATE + 30 days."
+            )
+            return updated_sql, note
+        return sql, None
+
+    # past event cap
+    if fd_context and not dp_context:
+        date_expr = "COALESCE(delivery_to_consignee_date, empty_container_return_date)"
+        if re.search(
+            r"\b(delivery_to_consignee_date|empty_container_return_date)\b\s*(<=|>=|=|<|>|between)\b",
+            sql,
+            re.I,
+        ):
+            return sql, None
+    else:
+        date_expr = "COALESCE(ata_dp_date, derived_ata_dp_date)"
+        if re.search(
+            r"\b(ata_dp_date|derived_ata_dp_date)\b\s*(<=|>=|=|<|>|between)\b",
+            sql,
+            re.I,
+        ):
+            return sql, None
+
+    condition = (
+        f"{date_expr} >= CURRENT_DATE - INTERVAL 30 DAY "
+        f"AND {date_expr} <= CURRENT_DATE"
+    )
+    updated_sql, changed = _inject_filter_condition(sql, condition)
+    if changed:
+        note = "Applied default past window: CURRENT_DATE - 30 days to CURRENT_DATE."
+        return updated_sql, note
+    return sql, None
+
+
+def _apply_default_delay_cap(question: str, sql: str) -> tuple[str, Optional[str]]:
+    lowered = (question or "").lower()
+    if _contains_explicit_time_window(question):
+        return sql, None
+
+    mentions_delayed = any(k in lowered for k in ["delay", "delayed", "late"])
+    mentions_early = "early" in lowered
+    if not (mentions_delayed or mentions_early):
+        return sql, None
+
+    delay_col = (
+        "fd_delayed_dur"
+        if _is_fd_context(question) and not _is_dp_context(question)
+        else "dp_delayed_dur"
+    )
+    if _has_existing_column_constraint(sql, delay_col):
+        return sql, None
+
+    if mentions_delayed and not mentions_early:
+        condition = f"{delay_col} >= 7"
+    elif mentions_early and not mentions_delayed:
+        condition = f"{delay_col} <= -7"
+    else:
+        condition = f"ABS({delay_col}) >= 7"
+
+    updated_sql, changed = _inject_filter_condition(sql, condition)
+    if changed:
+        note = "Applied default delay/early threshold: 7 days."
+        return updated_sql, note
+    return sql, None
+
+
+def _apply_default_query_caps(question: str, sql: str) -> tuple[str, List[str]]:
+    notes: List[str] = []
+    updated_sql = sql
+
+    updated_sql, time_note = _apply_default_time_cap(question, updated_sql)
+    if time_note:
+        notes.append(time_note)
+
+    updated_sql, delay_note = _apply_default_delay_cap(question, updated_sql)
+    if delay_note:
+        notes.append(delay_note)
+
+    # Deduplicate in case a repair path re-applies logic.
+    notes = list(dict.fromkeys(notes))
+    return updated_sql, notes
+
+
 def _merge_usage(state: Dict[str, Any], usage: Optional[Dict[str, Any]]) -> None:
     if not isinstance(usage, dict):
         return
@@ -590,6 +780,7 @@ ORDER BY best_eta_dp_date DESC;
         ]
 
         generated_sql = ""
+        applied_default_caps: List[str] = []
         try:
             if is_test_mode():
 
@@ -600,6 +791,9 @@ ORDER BY best_eta_dp_date DESC;
                 _merge_usage(state, resp.get("usage"))
                 content = resp.get("content", "")
                 generated_sql = _extract_sql_code(content)
+                generated_sql, applied_default_caps = _apply_default_query_caps(
+                    q, generated_sql
+                )
 
         except Exception as e:
             logger.error(f"LLM SQL Gen Failed: {e}")
@@ -652,6 +846,13 @@ ORDER BY best_eta_dp_date DESC;
                 _merge_usage(state, repair_usage)
                 if repaired_sql and repaired_sql != generated_sql:
                     generated_sql = repaired_sql
+                    generated_sql, reapplied_caps = _apply_default_query_caps(
+                        q, generated_sql
+                    )
+                    if reapplied_caps:
+                        applied_default_caps = list(
+                            dict.fromkeys(applied_default_caps + reapplied_caps)
+                        )
                     exec_attempts += 1
                     exec_result = engine.execute_query(
                         parquet_path,
@@ -663,6 +864,38 @@ ORDER BY best_eta_dp_date DESC;
                 logger.warning("Analytics SQL repair pass failed: %s", repair_exc)
 
         if exec_result["success"]:
+            result_rows = exec_result.get("result_rows")
+            if isinstance(result_rows, list) and len(result_rows) == 0:
+                if analytics_context_mode == "previous_result":
+                    state["answer_text"] = (
+                        "I couldn't find any records in the previous analytics result "
+                        "scope that match this filter."
+                    )
+                else:
+                    state["answer_text"] = (
+                        "I couldn't find any records in your current authorized "
+                        "analytics scope that match this filter."
+                    )
+
+                state["is_satisfied"] = True
+                state["analytics_last_error"] = None
+                state["analytics_attempt_count"] = exec_attempts
+                state["table_spec"] = None
+                state["chart_spec"] = None
+                state["last_analytics_result_selector"] = None
+                state["last_analytics_result_count"] = 0
+                state["last_analytics_question"] = q
+                if applied_default_caps:
+                    state.setdefault("notices", []).extend(applied_default_caps)
+                    state["answer_text"] = (
+                        "Note: "
+                        + " ".join(applied_default_caps)
+                        + "\n\n"
+                        + state["answer_text"]
+                    )
+                state["messages"] = [AIMessage(content=state["answer_text"])]
+                return state
+
             final_answer = str(
                 exec_result.get("result") or exec_result.get("final_answer") or ""
             ).strip()
@@ -670,6 +903,14 @@ ORDER BY best_eta_dp_date DESC;
                 state["answer_text"] = f"Here is what I found:\n{final_answer}"
             else:
                 state["answer_text"] = "I ran the analytics query successfully."
+            if applied_default_caps:
+                state.setdefault("notices", []).extend(applied_default_caps)
+                state["answer_text"] = (
+                    "Note: "
+                    + " ".join(applied_default_caps)
+                    + "\n\n"
+                    + state["answer_text"]
+                )
             state["is_satisfied"] = True
             state["analytics_last_error"] = None
             state["analytics_attempt_count"] = exec_attempts
