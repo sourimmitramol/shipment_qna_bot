@@ -169,4 +169,51 @@ WHERE discharge_port ILIKE '%nashville%'
 ORDER BY best_eta_dp_date DESC;
 ```
 
+### Scenario G: Shipment Missed IN-DC: includes delivered-late and overdue-not-delivered (DELIVERED But Missed IN-DC / MISSED PLANNED DELIVERY)
+**User Query:** "Which shipments failed planned delivery?" (or "not arrived at FD within IN-DC Date")
+**Interpretation Rules:**
+- "Delivered at FD": `delivery_to_consignee_date` not null **OR** `empty_container_return_date` not null.
+- "Failed/missed IN-DC DATE": `in-dc_date` not null **and** `in-dc_date <= delivery_to_consignee_date` **OR** `in-dc_date <= empty_container_return_date` .
+**Logic:**
+- Keep only records where in_dc_date is not null
+- Shipment has any FD delivery event (either consignee delivery OR empty container return)
+- Delivered Late: The actual event occurred on or after the IN‑DC date 
+- No FD delivery event yet and IN‑DC date is already passed (overdue)
+**DuckDB SQL:**
+```sql
+SELECT
+    container_number,
+    po_numbers,
+    load_port,
+    final_destination,
+    strftime("in-dc_date", '%d-%b-%Y') AS in_dc_date,
+    strftime(delivery_to_consignee_date, '%d-%b-%Y') AS delivered_date,
+    strftime(empty_container_return_date, '%d-%b-%Y') AS container_returned_date,
+    CASE
+	WHEN delivery_to_consignee_date IS NULL AND empty_container_return_date IS NULL AND "in-dc_date" <= CURRENT_DATE
+	THEN 'Overdue - Not Delivered Yet'
+	WHEN "in_dc_date" <= COALESCE(delivery_to_consignee_date, empty_container_return_date)
+	THEN 'Missed Planned Delivery'
+	ELSE 'Aligned As Planned'
+    END AS in_dc_status_bucket
+
+FROM df
+WHERE "in-dc_date" IS NOT NULL
+   AND ( 
+		-- overdue and not delivered
+		(
+		delivery_to_consignee_date IS NULL AND empty_container_return_date IS NULL AND "in-dc_date" <= CURRENT_DATE
+		)
+  	OR 
+		 -- Delivered late by calculating actual available date
+		(
+            	(delivery_to_consignee_date IS NOT NULL OR empty_container_return_date IS NOT NULL)
+            	AND "in-dc_date" <= COALESCE(delivery_to_consignee_date, empty_container_return_date)
+        	)
+
+	)
+
+ORDER BY "in-dc_date" ASC;
+```
+
 

@@ -22,8 +22,8 @@ async def get_session(request: Request):
     This allows the frontend to sync after a page refresh or server restart.
     """
     return {
-        "consignee_codes": request.session.get("consignee_codes", []),
-        "conversation_id": request.session.get("conversation_id"),
+        "consignee_codes": request.session.get("consignee_codes", []),  # type: ignore
+        "conversation_id": request.session.get("conversation_id"),  # type: ignore
     }
 
 
@@ -105,11 +105,6 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     # 4) Run the langGraph with a clean initial state
     # important we pass *effective* consignee codes only, the graph/tooling
     # must never see unvalidated raw payload values.
-
-    # TODO: call LangGraph execution here.
-    # For now, stub response to verify logs pipeline.
-    # Placeholder logic for processing the chat request
-    # In a production implementation, this would involve NLP processing, database queries, etc.
 
     import time
 
