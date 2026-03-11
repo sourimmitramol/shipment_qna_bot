@@ -845,24 +845,21 @@
                 let renderText = text || '';
                 let fallbackTable = null;
                 const allowAnalyticsRender = String(intent || '').toLowerCase() === 'analytics';
+                const hasTableData = !!(table && Array.isArray(table.rows) && table.rows.length > 0);
 
-                if (allowAnalyticsRender && table && table.rows && table.rows.length > 0) {
+                if (hasTableData) {
                     renderText = stripMarkdownTables(renderText);
                 } else if (allowAnalyticsRender) {
                     fallbackTable = parseSpaceAlignedTable(renderText);
                     if (fallbackTable) {
                         renderText = fallbackTable.leadText || '';
                     }
-                } else {
-                    renderText = stripMarkdownTables(renderText);
                 }
 
                 const contentDiv = document.createElement('div');
                 if (renderText.trim()) {
                     contentDiv.innerHTML = marked.parse(renderText);
-                    if (allowAnalyticsRender) {
-                        normalizeRenderedTables(contentDiv);
-                    }
+                    normalizeRenderedTables(contentDiv);
                     div.appendChild(contentDiv);
                 }
 
@@ -871,8 +868,8 @@
                     div.appendChild(chartEl);
                 }
 
-                if (allowAnalyticsRender && table && table.rows && table.rows.length > 0) {
-                    const tableEl = renderTable(table, { analytics: true });
+                if (hasTableData) {
+                    const tableEl = renderTable(table, { analytics: allowAnalyticsRender });
                     div.appendChild(tableEl);
                 } else if (allowAnalyticsRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
                     const tableEl = renderTable(fallbackTable.table, { analytics: true });
