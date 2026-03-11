@@ -225,7 +225,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 total_count = int(analytics.get("count") or total_count)
             except Exception:
                 total_count = len(hits)
-        display_count = min(len(hits), 10)
+        display_count = len(hits)
 
         # Context construction
         context_str = ""
@@ -627,6 +627,38 @@ System Instructions:
                         row[c] = val
                     table_rows.append(row)
 
+                # For PO/Booking/OBL lookups, explicitly expose associated container numbers.
+                unique_container_numbers: List[str] = []
+                seen_container_numbers = set()
+                for h in unique_hits:
+                    container_number = (
+                        str(h.get("container_number") or "").strip().upper()
+                    )
+                    if (
+                        container_number
+                        and container_number not in seen_container_numbers
+                    ):
+                        unique_container_numbers.append(container_number)
+                        seen_container_numbers.add(container_number)
+
+                has_parent_id_lookup = bool(
+                    requested_ids.get("po_numbers")
+                    or requested_ids.get("booking_numbers")
+                    or requested_ids.get("obl_nos")
+                )
+                if has_parent_id_lookup and unique_container_numbers:
+                    inline_limit = 50
+                    listed = unique_container_numbers[:inline_limit]
+                    container_line = (
+                        f"Associated container numbers ({len(unique_container_numbers)}): "
+                        + ", ".join(listed)
+                    )
+                    if len(unique_container_numbers) > inline_limit:
+                        container_line += f", ... showing first {inline_limit}."
+                    if container_line not in response_text:
+                        response_text = f"{container_line}\n\n{response_text}".strip()
+                        state["answer_text"] = response_text
+
                 state["table_spec"] = {
                     "columns": cols,
                     "rows": table_rows,
@@ -634,8 +666,11 @@ System Instructions:
                 }
 
                 if "|" not in response_text:
+                    inline_table_limit = 50
                     response_text = (
-                        response_text.rstrip() + "\n\n" + _build_table(unique_hits[:10])
+                        response_text.rstrip()
+                        + "\n\n"
+                        + _build_table(unique_hits[:inline_table_limit])
                     )
                     state["answer_text"] = response_text
 
