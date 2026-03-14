@@ -94,6 +94,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     # In a production implementation, this would involve NLP processing, database queries, etc.
 
     import time
+
     from fastapi.concurrency import run_in_threadpool
 
     start_time = time.time()
@@ -110,7 +111,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
                 "completion_tokens": 0,
                 "total_tokens": 0,
             },
-        }
+        },
     )
 
     end_time = time.time()

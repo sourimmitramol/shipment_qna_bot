@@ -32,11 +32,14 @@ class _StubChatTool:
 
 class _StubCon:
     def __init__(self):
-        self.df = lambda: pd.DataFrame({"discharge_port": ["LOS ANGELES"], "count": [12]})
-    
+        self.df = lambda: pd.DataFrame(
+            {"discharge_port": ["LOS ANGELES"], "count": [12]}
+        )
+
     def sql(self, *args, **kwargs):
         # returns self so `sample_rel.df()` can be called in the analytics code
         return self
+
 
 class _StubEngine:
     def __init__(self, exec_result):

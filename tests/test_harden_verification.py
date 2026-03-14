@@ -22,8 +22,11 @@ def test_security_headers():
 def test_duckdb_engine_rce_blocking():
     engine = DuckDBAnalyticsEngine()
     import os
+
     # DuckDB operates purely on sql. Arbitrary python string eval won't execute pandas code anyway.
-    res1 = engine.execute_query("dummy.parquet", "res = __import__('os').system('ls')", ["CODE1"])
+    res1 = engine.execute_query(
+        "dummy.parquet", "res = __import__('os').system('ls')", ["CODE1"]
+    )
     assert res1["success"] is False
 
     res2 = engine.execute_query("dummy.parquet", "SELECT system('ls')", ["CODE1"])

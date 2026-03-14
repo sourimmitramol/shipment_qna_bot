@@ -75,20 +75,25 @@ def test_duckdb_preflight_rejects_disallowed_import():
     engine = DuckDBAnalyticsEngine()
 
     result = engine.execute_query(
-        "dummy.parquet", "import matplotlib.pyplot as plt\nresult = df['x'].sum()", ["CODE1"]
+        "dummy.parquet",
+        "import matplotlib.pyplot as plt\nresult = df['x'].sum()",
+        ["CODE1"],
     )
 
     assert result["success"] is False
 
 
 def test_duckdb_engine_coerces_string_ops(tmp_path):
-    df = pd.DataFrame({"po_numbers": ["5303012825", "5303012826"], "consignee_codes": [["CODE1"], ["CODE1"]]})
+    df = pd.DataFrame(
+        {
+            "po_numbers": ["5303012825", "5303012826"],
+            "consignee_codes": [["CODE1"], ["CODE1"]],
+        }
+    )
     df.to_parquet(tmp_path / "dummy.parquet")
     engine = DuckDBAnalyticsEngine()
 
-    code = (
-        "SELECT po_numbers FROM df WHERE po_numbers LIKE '%530301%'"
-    )
+    code = "SELECT po_numbers FROM df WHERE po_numbers LIKE '%530301%'"
     result = engine.execute_query(str(tmp_path / "dummy.parquet"), code, ["CODE1"])
 
     assert result["success"] is True
