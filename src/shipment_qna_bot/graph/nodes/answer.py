@@ -7,11 +7,8 @@ from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.date_tools import get_today_date
-<<<<<<< HEAD
 from shipment_qna_bot.tools.ready_ref import load_ready_ref
-=======
 from shipment_qna_bot.utils.config import is_chart_enabled
->>>>>>> old_main_dec25_2
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: Optional[AzureOpenAIChatTool] = None
@@ -250,39 +247,8 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     )
                 context_str += f"Status Breakdown: {facet_summary}\n"
 
-<<<<<<< HEAD
         # Load operational reference (without dataset schema section).
         ready_ref_content = load_ready_ref()
-=======
-        # Load Ready Reference
-        ready_ref_content = ""
-        try:
-            import os
-
-            # I'll check for the ready reference file, looking locally first.
-            ready_ref_path = "docs/ready_ref.md"
-            if not os.path.exists(ready_ref_path):
-                # If I can't find it, I'll try an absolute path check.
-                base_dir = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "../../../../")
-                )
-                ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
-
-            if os.path.exists(ready_ref_path):
-                with open(ready_ref_path, "r") as f:
-                    full_ref = f.read()
-                    # I prune the reference to save tokens, only keeping style and schema.
-                    style_match = re.search(
-                        r"(## 0\. Response Style.*?)## 2\.", full_ref, re.DOTALL
-                    )
-                    if style_match:
-                        ready_ref_content = style_match.group(1).strip()
-                    else:
-                        # Fallback: take first 100 lines if regex fails
-                        ready_ref_content = "\n".join(full_ref.splitlines()[:100])
-        except Exception:
-            pass  # Fail silently/gracefully
->>>>>>> old_main_dec25_2
 
         # 2. Add Documents Context
         if hits:

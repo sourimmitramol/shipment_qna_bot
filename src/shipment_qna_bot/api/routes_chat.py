@@ -4,6 +4,7 @@ import uuid
 from typing import List  # type: ignore
 
 from fastapi import APIRouter, Request
+from fastapi.concurrency import run_in_threadpool
 
 from shipment_qna_bot.graph.builder import run_graph
 from shipment_qna_bot.logging.logger import logger, set_log_context
@@ -91,13 +92,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
 
     import time
 
-<<<<<<< HEAD
     start_time = time.perf_counter()
-=======
-    from fastapi.concurrency import run_in_threadpool
-
-    start_time = time.time()
->>>>>>> old_main_dec25_2
 
     # run graph in a separate thread so concurrent users don't block the FastAPI event loop
     result = await run_in_threadpool(

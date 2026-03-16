@@ -36,8 +36,6 @@ def _get_chat_tool() -> AzureOpenAIChatTool:
         _chat_tool = AzureOpenAIChatTool()
     return _chat_tool
 
-
-<<<<<<< HEAD
 def _has_extracted_ids(state: GraphState) -> bool:
     extracted = state.get("extracted_ids") or {}
     if not isinstance(extracted, dict):
@@ -79,11 +77,11 @@ def _contains_keyword(text: str, keyword: str) -> bool:
     if not lowered or not term:
         return False
     return bool(re.search(r"\b" + re.escape(term) + r"\b", lowered))
-=======
+
+
 def _contains_weather_terms(text: str) -> bool:
     lowered = (text or "").lower()
     return any(term in lowered for term in _WEATHER_TERMS)
->>>>>>> old_main_dec25_2
 
 
 def intent_node(state: GraphState) -> GraphState:
@@ -199,11 +197,9 @@ def intent_node(state: GraphState) -> GraphState:
                 intent = "greeting"
             elif any(_contains_keyword(lowered, w) for w in exit_words):
                 intent = "end"
-<<<<<<< HEAD
-            elif any(_contains_keyword(lowered, w) for w in analytics_words):
-=======
-            elif is_chart_enabled() and any(w in lowered for w in analytics_words):
->>>>>>> old_main_dec25_2
+            elif is_chart_enabled() and any(
+                _contains_keyword(lowered, w) for w in analytics_words
+            ):
                 intent = "analytics"
             elif is_weather_enabled() and _contains_weather_terms(lowered):
                 intent = "retrieval"  # Weather is usually an enrichment for retrieval

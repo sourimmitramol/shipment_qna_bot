@@ -22,11 +22,6 @@ def route_node(
 
     if intent == "company_overview":
         return "static_info"
-<<<<<<< HEAD
-    if intent == "analytics" and (
-        state.get("topic_shift_candidate") or state.get("analytics_scope_candidate")
-    ):
-=======
     if intent == "clarification":
         return "clarification"
     if intent == "greeting":
@@ -36,8 +31,9 @@ def route_node(
     if "weather" in sub_intents:
         logger.info("Routing query to dedicated weather impact path.")
         return "weather_impact"
-    if intent == "analytics" and state.get("topic_shift_candidate"):
->>>>>>> old_main_dec25_2
+    if intent == "analytics" and (
+        state.get("topic_shift_candidate") or state.get("analytics_scope_candidate")
+    ):
         return "clarification"
     if intent == "analytics":
         return "analytics"

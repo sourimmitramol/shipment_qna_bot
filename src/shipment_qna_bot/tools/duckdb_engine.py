@@ -122,6 +122,20 @@ class DuckDBAnalyticsEngine:
         consignee_codes: List[str],
         selector: Optional[Dict[str, Any]] = None,
     ) -> None:
+        self._prepare_view_on_connection(
+            self.con,
+            parquet_path,
+            consignee_codes,
+            selector=selector,
+        )
+
+    def _prepare_view_on_connection(
+        self,
+        con: Any,
+        parquet_path: str,
+        consignee_codes: List[str],
+        selector: Optional[Dict[str, Any]] = None,
+    ) -> None:
         parquet_sql = parquet_path.replace("'", "''")
         where_clauses = [self._build_rls_filter(consignee_codes)]
 
@@ -138,7 +152,7 @@ class DuckDBAnalyticsEngine:
             SELECT * FROM read_parquet('{parquet_sql}')
             WHERE {where_sql}
         """
-        self.con.execute(rls_query)
+        con.execute(rls_query)
 
     def execute_query(
         self,
@@ -156,24 +170,16 @@ class DuckDBAnalyticsEngine:
         logger.info(f"QRY:\n{sql}")
 
         try:
-<<<<<<< HEAD
-            self.prepare_view(parquet_path, consignee_codes, selector=selector)
-=======
             import duckdb
 
             # Create an isolated connection for this query execution solely.
             con = duckdb.connect(self.db_path)
-
-            safe_codes = [c.replace("'", "''") for c in consignee_codes]
-            codes_str = ", ".join([f"'{c}'" for c in safe_codes])
-
-            rls_query = f"""
-                CREATE OR REPLACE VIEW df AS 
-                SELECT * FROM read_parquet('{parquet_path}')
-                WHERE list_has_any(consignee_codes, [{codes_str}]::VARCHAR[])
-            """
-            con.execute(rls_query)
->>>>>>> old_main_dec25_2
+            self._prepare_view_on_connection(
+                con,
+                parquet_path,
+                consignee_codes,
+                selector=selector,
+            )
 
             rel = con.sql(sql)
 
@@ -240,9 +246,6 @@ class DuckDBAnalyticsEngine:
                 "result_value": result_rows,
             }
 
-            con.close()
-            return result
-
         except Exception as e:
             logger.error(f"QRY execution failed: {e}")
             return {
@@ -250,3 +253,9 @@ class DuckDBAnalyticsEngine:
                 "error": f"{type(e).__name__}: {str(e)}",
                 "output": "",
             }
+        finally:
+            if "con" in locals():
+                try:
+                    con.close()
+                except Exception:
+                    pass

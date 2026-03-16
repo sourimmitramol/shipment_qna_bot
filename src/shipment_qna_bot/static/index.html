@@ -846,12 +846,6 @@
             if (role === 'bot') {
                 let renderText = text || '';
                 let fallbackTable = null;
-<<<<<<< HEAD
-                const allowAnalyticsRender = String(intent || '').toLowerCase() === 'analytics';
-                const hasTableData = !!(table && Array.isArray(table.rows) && table.rows.length > 0);
-
-                if (hasTableData) {
-=======
                 const isAnalyticsIntent = String(intent || '').toLowerCase() === 'analytics';
                 const hasStructuredPayload =
                     (chart && Array.isArray(chart.data) && chart.data.length > 0) ||
@@ -859,7 +853,6 @@
                 const allowStructuredRender = isAnalyticsIntent || hasStructuredPayload;
 
                 if (allowStructuredRender && table && table.rows && table.rows.length > 0) {
->>>>>>> old_main_dec25_2
                     renderText = stripMarkdownTables(renderText);
                 } else if (allowStructuredRender) {
                     fallbackTable = parseSpaceAlignedTable(renderText);
@@ -871,13 +864,9 @@
                 const contentDiv = document.createElement('div');
                 if (renderText.trim()) {
                     contentDiv.innerHTML = marked.parse(renderText);
-<<<<<<< HEAD
-                    normalizeRenderedTables(contentDiv);
-=======
                     if (allowStructuredRender) {
                         normalizeRenderedTables(contentDiv);
                     }
->>>>>>> old_main_dec25_2
                     div.appendChild(contentDiv);
                 }
 
@@ -886,13 +875,8 @@
                     div.appendChild(chartEl);
                 }
 
-<<<<<<< HEAD
-                if (hasTableData) {
-                    const tableEl = renderTable(table, { analytics: allowAnalyticsRender });
-=======
                 if (allowStructuredRender && table && table.rows && table.rows.length > 0) {
                     const tableEl = renderTable(table, { analytics: true });
->>>>>>> old_main_dec25_2
                     div.appendChild(tableEl);
                 } else if (allowStructuredRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
                     const tableEl = renderTable(fallbackTable.table, { analytics: true });

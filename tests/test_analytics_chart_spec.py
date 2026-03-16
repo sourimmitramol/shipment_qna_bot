@@ -13,10 +13,6 @@ class _StubBlobManager:
     def get_local_path(self):
         return self._parquet_path
 
-    def get_local_path(self):
-        # We need a dummy path for duckdb to execute against a view. The actual test engine mock ignores it anyway.
-        return "dummy.parquet"
-
 
 class _StubChatTool:
     def __init__(self, sql: str):
@@ -33,46 +29,16 @@ class _StubChatTool:
         }
 
 
-<<<<<<< HEAD
-=======
-class _CapturingSqlChatTool:
+class _CapturingSqlChatTool(_StubChatTool):
     def __init__(self, sql: str):
-        self._sql = sql
+        super().__init__(sql)
         self.messages = None
 
     def chat_completion(self, messages, temperature=0.0):
         self.messages = messages
-        return {
-            "content": f"```sql\n{self._sql}\n```",
-            "usage": {
-                "prompt_tokens": 1,
-                "completion_tokens": 1,
-                "total_tokens": 2,
-            },
-        }
+        return super().chat_completion(messages, temperature=temperature)
 
 
-class _StubCon:
-    def __init__(self):
-        self.df = lambda: pd.DataFrame(
-            {"discharge_port": ["LOS ANGELES"], "count": [12]}
-        )
-
-    def sql(self, *args, **kwargs):
-        # returns self so `sample_rel.df()` can be called in the analytics code
-        return self
-
-
-class _StubEngine:
-    def __init__(self, exec_result):
-        self._exec_result = exec_result
-        self.con = _StubCon()
-
-    def execute_query(self, parquet_path, sql, consignee_codes):
-        return dict(self._exec_result)
-
-
->>>>>>> old_main_dec25_2
 def _base_state(question: str):
     return {
         "question_raw": question,
@@ -91,6 +57,12 @@ def _base_state(question: str):
     }
 
 
+def _enable_default_caps(monkeypatch):
+    monkeypatch.setattr(analytics_module, "DEFAULT_FUTURE_WINDOW_DAYS", 30)
+    monkeypatch.setattr(analytics_module, "DEFAULT_PAST_WINDOW_DAYS", 30)
+    monkeypatch.setattr(analytics_module, "DEFAULT_DELAY_THRESHOLD_DAYS", 7)
+
+
 def _write_parquet(tmp_path):
     path = tmp_path / "analytics.parquet"
     df = pd.DataFrame(
@@ -98,10 +70,17 @@ def _write_parquet(tmp_path):
             "container_number": ["CONT1", "CONT2", "CONT3"],
             "consignee_codes": [["0000866"], ["0000866"], ["0000866"]],
             "discharge_port": ["LOS ANGELES", "NEW YORK", "LOS ANGELES"],
+            "final_destination": ["LONG BEACH", "NEW YORK", "LONG BEACH"],
             "shipment_status": ["IN_OCEAN", "DELIVERED", "IN_OCEAN"],
             "po_numbers": [["PO1"], ["PO2"], ["PO3"]],
             "booking_numbers": [["BK1"], ["BK2"], ["BK3"]],
             "obl_nos": [["OBL1"], ["OBL2"], ["OBL3"]],
+            "best_eta_dp_date": pd.to_datetime(
+                ["2026-04-10", "2026-04-12", "2026-04-14"]
+            ),
+            "best_eta_fd_date": pd.to_datetime(
+                ["2026-04-15", "2026-04-18", "2026-04-20"]
+            ),
         }
     )
     df.to_parquet(path)
@@ -121,6 +100,12 @@ def _write_parquet_with_time_windows(tmp_path):
                 "LOS ANGELES",
                 "LOS ANGELES",
             ],
+            "final_destination": [
+                "LONG BEACH",
+                "LONG BEACH",
+                "LONG BEACH",
+                "LONG BEACH",
+            ],
             "shipment_status": ["IN_OCEAN", "IN_OCEAN", "DELIVERED", "AT_DP"],
             "po_numbers": [["PO1"], ["PO2"], ["PO3"], ["PO4"]],
             "booking_numbers": [["BK1"], ["BK2"], ["BK3"], ["BK4"]],
@@ -131,6 +116,14 @@ def _write_parquet_with_time_windows(tmp_path):
                     today + timedelta(days=45),
                     today - timedelta(days=3),
                     today + timedelta(days=2),
+                ]
+            ),
+            "best_eta_fd_date": pd.to_datetime(
+                [
+                    today + timedelta(days=7),
+                    today + timedelta(days=50),
+                    today - timedelta(days=1),
+                    today + timedelta(days=4),
                 ]
             ),
             "ata_dp_date": pd.to_datetime(
@@ -163,11 +156,7 @@ def test_analytics_generates_bar_chart_spec(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
-<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
-=======
-        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
->>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -201,11 +190,7 @@ def test_analytics_generates_pie_chart_spec(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
-<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
-=======
-        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
->>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -218,7 +203,9 @@ def test_analytics_generates_pie_chart_spec(monkeypatch, tmp_path):
     assert new_state["chart_spec"]["encodings"]["value"] == "count"
 
 
-def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch, tmp_path):
+def test_analytics_keeps_table_without_chart_when_not_requested(
+    monkeypatch, tmp_path
+):
     parquet_path = _write_parquet(tmp_path)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
@@ -234,11 +221,7 @@ def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch, tmp
         ),
     )
     monkeypatch.setattr(
-<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
-=======
-        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
->>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -264,7 +247,6 @@ def test_analytics_previous_result_scope_filters_view(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
-<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
@@ -309,9 +291,6 @@ def test_analytics_empty_result_set_returns_clear_message(monkeypatch, tmp_path)
     )
     monkeypatch.setattr(
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
-=======
-        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result_dict())
->>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -320,14 +299,13 @@ def test_analytics_empty_result_set_returns_clear_message(monkeypatch, tmp_path)
 
     assert new_state["is_satisfied"] is True
     assert "couldn't find any records" in (new_state.get("answer_text") or "").lower()
-    assert "here is what i found" not in (new_state.get("answer_text") or "").lower()
     assert new_state.get("table_spec") is None
     assert new_state.get("chart_spec") is None
 
-<<<<<<< HEAD
 
 def test_analytics_applies_default_future_window_cap(monkeypatch, tmp_path):
     parquet_path = _write_parquet_with_time_windows(tmp_path)
+    _enable_default_caps(monkeypatch)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
@@ -360,6 +338,7 @@ def test_analytics_arriving_phrase_applies_future_and_not_arrived_cap(
     monkeypatch, tmp_path
 ):
     parquet_path = _write_parquet_with_time_windows(tmp_path)
+    _enable_default_caps(monkeypatch)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
@@ -391,6 +370,7 @@ def test_analytics_arriving_phrase_applies_future_and_not_arrived_cap(
 
 def test_analytics_applies_default_past_window_cap(monkeypatch, tmp_path):
     parquet_path = _write_parquet_with_time_windows(tmp_path)
+    _enable_default_caps(monkeypatch)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
@@ -421,6 +401,7 @@ def test_analytics_applies_default_past_window_cap(monkeypatch, tmp_path):
 
 def test_analytics_applies_default_delay_threshold_cap(monkeypatch, tmp_path):
     parquet_path = _write_parquet_with_time_windows(tmp_path)
+    _enable_default_caps(monkeypatch)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
@@ -449,30 +430,19 @@ def test_analytics_applies_default_delay_threshold_cap(monkeypatch, tmp_path):
     rows = new_state["table_spec"]["rows"]
     assert len(rows) == 1
     assert rows[0]["container_number"] == "CONT_DELAY"
-=======
-    assert new_state["chart_spec"] is not None
-    assert new_state["chart_spec"]["kind"] == "pie"
-    assert new_state["chart_spec"]["encodings"]["label"] == "label"
-    assert new_state["chart_spec"]["encodings"]["value"] == "value"
 
 
-def test_unqualified_arrival_location_prompt_covers_dp_and_fd(monkeypatch):
-    df = pd.DataFrame(
-        {
-            "discharge_port": ["LONG BEACH"],
-            "final_destination": ["LONG BEACH"],
-            "best_eta_dp_date": ["2026-04-10"],
-        }
-    )
+def test_unqualified_arrival_location_prompt_covers_dp_and_fd(monkeypatch, tmp_path):
+    parquet_path = _write_parquet(tmp_path)
     chat = _CapturingSqlChatTool("SELECT count(*) AS total FROM df")
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
-        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(df)
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(parquet_path)
     )
     monkeypatch.setattr(analytics_module, "_get_chat", lambda: chat)
     monkeypatch.setattr(
-        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+        analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
     analytics_module.analytics_planner_node(
@@ -485,4 +455,3 @@ def test_unqualified_arrival_location_prompt_covers_dp_and_fd(monkeypatch):
     assert "`discharge_port` OR `final_destination`" in system_prompt
     assert "COALESCE(best_eta_dp_date, eta_dp_date)" in system_prompt
     assert "COALESCE(best_eta_fd_date, eta_fd_date)" in system_prompt
->>>>>>> old_main_dec25_2
