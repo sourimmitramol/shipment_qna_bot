@@ -13,6 +13,10 @@ class _StubBlobManager:
     def get_local_path(self):
         return self._parquet_path
 
+    def get_local_path(self):
+        # We need a dummy path for duckdb to execute against a view. The actual test engine mock ignores it anyway.
+        return "dummy.parquet"
+
 
 class _StubChatTool:
     def __init__(self, sql: str):
@@ -29,6 +33,46 @@ class _StubChatTool:
         }
 
 
+<<<<<<< HEAD
+=======
+class _CapturingSqlChatTool:
+    def __init__(self, sql: str):
+        self._sql = sql
+        self.messages = None
+
+    def chat_completion(self, messages, temperature=0.0):
+        self.messages = messages
+        return {
+            "content": f"```sql\n{self._sql}\n```",
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2,
+            },
+        }
+
+
+class _StubCon:
+    def __init__(self):
+        self.df = lambda: pd.DataFrame(
+            {"discharge_port": ["LOS ANGELES"], "count": [12]}
+        )
+
+    def sql(self, *args, **kwargs):
+        # returns self so `sample_rel.df()` can be called in the analytics code
+        return self
+
+
+class _StubEngine:
+    def __init__(self, exec_result):
+        self._exec_result = exec_result
+        self.con = _StubCon()
+
+    def execute_query(self, parquet_path, sql, consignee_codes):
+        return dict(self._exec_result)
+
+
+>>>>>>> old_main_dec25_2
 def _base_state(question: str):
     return {
         "question_raw": question,
@@ -119,7 +163,11 @@ def test_analytics_generates_bar_chart_spec(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+>>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -153,7 +201,11 @@ def test_analytics_generates_pie_chart_spec(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+>>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -182,7 +234,11 @@ def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch, tmp
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+>>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -208,6 +264,7 @@ def test_analytics_previous_result_scope_filters_view(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
@@ -252,6 +309,9 @@ def test_analytics_empty_result_set_returns_clear_message(monkeypatch, tmp_path)
     )
     monkeypatch.setattr(
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result_dict())
+>>>>>>> old_main_dec25_2
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -264,6 +324,7 @@ def test_analytics_empty_result_set_returns_clear_message(monkeypatch, tmp_path)
     assert new_state.get("table_spec") is None
     assert new_state.get("chart_spec") is None
 
+<<<<<<< HEAD
 
 def test_analytics_applies_default_future_window_cap(monkeypatch, tmp_path):
     parquet_path = _write_parquet_with_time_windows(tmp_path)
@@ -388,3 +449,40 @@ def test_analytics_applies_default_delay_threshold_cap(monkeypatch, tmp_path):
     rows = new_state["table_spec"]["rows"]
     assert len(rows) == 1
     assert rows[0]["container_number"] == "CONT_DELAY"
+=======
+    assert new_state["chart_spec"] is not None
+    assert new_state["chart_spec"]["kind"] == "pie"
+    assert new_state["chart_spec"]["encodings"]["label"] == "label"
+    assert new_state["chart_spec"]["encodings"]["value"] == "value"
+
+
+def test_unqualified_arrival_location_prompt_covers_dp_and_fd(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "discharge_port": ["LONG BEACH"],
+            "final_destination": ["LONG BEACH"],
+            "best_eta_dp_date": ["2026-04-10"],
+        }
+    )
+    chat = _CapturingSqlChatTool("SELECT count(*) AS total FROM df")
+
+    monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
+    monkeypatch.setattr(
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(df)
+    )
+    monkeypatch.setattr(analytics_module, "_get_chat", lambda: chat)
+    monkeypatch.setattr(
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+    )
+
+    analytics_module.analytics_planner_node(
+        _base_state("Show all POs scheduled to arrive at Long Beach in Apr 2026")
+    )
+
+    assert chat.messages is not None
+    system_prompt = chat.messages[0]["content"]
+    assert "treat that location as ambiguous and cover BOTH legs" in system_prompt
+    assert "`discharge_port` OR `final_destination`" in system_prompt
+    assert "COALESCE(best_eta_dp_date, eta_dp_date)" in system_prompt
+    assert "COALESCE(best_eta_fd_date, eta_fd_date)" in system_prompt
+>>>>>>> old_main_dec25_2

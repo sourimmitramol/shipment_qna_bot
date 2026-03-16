@@ -17,13 +17,14 @@ from shipment_qna_bot.graph.nodes.retrieve import retrieve_node
 from shipment_qna_bot.graph.nodes.router import route_node
 from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
     static_greet_info_node
+from shipment_qna_bot.graph.nodes.weather_impact import weather_impact_node
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.tools.date_tools import get_today_date
 
 
 def should_continue(state: GraphState):
     """
-    Conditional edge to determine if we should retry retrieval or finish.
+    I'll decide here if I should retry the retrieval or just finish.
     """
     if state.get("is_satisfied"):
         return "end"
@@ -43,7 +44,7 @@ def should_continue(state: GraphState):
 
 def build_graph():
     """
-    Constructs the shipment QnA graph.
+    I'm building the shipment QnA graph structure here.
     """
     workflow = StateGraph(GraphState)
 
@@ -54,6 +55,7 @@ def build_graph():
     workflow.add_node("planner", planner_node)
     workflow.add_node("analytics_planner", analytics_planner_node)
     workflow.add_node("retrieve", retrieve_node)
+    workflow.add_node("weather_impact", weather_impact_node)
     workflow.add_node("answer", answer_node)
     workflow.add_node("judge", judge_node)
     workflow.add_node("static_info", static_greet_info_node)
@@ -76,6 +78,7 @@ def build_graph():
         {
             "retrieval": "planner",
             "analytics": "analytics_planner",
+            "weather_impact": "weather_impact",
             "static_info": "static_info",
             "clarification": "clarification",
             "end": END,
@@ -87,6 +90,7 @@ def build_graph():
     workflow.add_edge(
         "analytics_planner", END
     )  # Output of analytics is a final answer, skip judge/retrieval
+    workflow.add_edge("weather_impact", END)
     workflow.add_edge("retrieve", "answer")
     workflow.add_edge("answer", "judge")
     workflow.add_edge("static_info", END)
@@ -103,20 +107,29 @@ def build_graph():
         },
     )
 
-    # --- Checkpointer ---
-    # Using MemorySaver for in-memory durable execution (Session scope)
+    # I'm using MemorySaver to keep the conversation state in memory.
     checkpointer = MemorySaver()
 
     return workflow.compile(checkpointer=checkpointer)
 
 
-# Singleton instance
-graph_app = build_graph()
+# Lazy-loaded singleton
+_graph_app = None
+
+
+def get_graph():
+    """
+    I'll return the compiled graph, but I'm only building it once.
+    """
+    global _graph_app
+    if _graph_app is None:
+        _graph_app = build_graph()
+    return _graph_app
 
 
 def run_graph(input_state: dict) -> dict:
     """
-    Synchronous wrapper to run the graph.
+    I'm wrapping the graph execution in this synchronous runner.
     """
     thread_id = input_state.get("conversation_id", "default")
     config = {"configurable": {"thread_id": thread_id}}
@@ -139,7 +152,7 @@ def run_graph(input_state: dict) -> dict:
     if "now_utc" not in input_state:
         input_state["now_utc"] = datetime.now(timezone.utc).isoformat()
 
-    # Reset transient fields to avoid leaking prior turn state from the checkpointer.
+    # I clear these fields every turn so I don't leak state from previous questions.
     input_state.setdefault("retrieval_plan", None)
     input_state.setdefault("hits", [])
     input_state.setdefault("idx_analytics", None)
@@ -160,11 +173,9 @@ def run_graph(input_state: dict) -> dict:
     input_state["node_latency_ms"] = {}
     input_state["node_latency_trace"] = []
 
-    # Convert question_raw to a message for history persistence
     from langchain_core.messages import HumanMessage
 
-    # We always append the current question to the message history if it's a new turn.
-    # In LangGraph, if we use add_messages, we just provide the new message.
+    # I always append the new question to the history.
     input_state["messages"] = [HumanMessage(content=input_state["question_raw"])]
 
-    return graph_app.invoke(input_state, config=config)
+    return get_graph().invoke(input_state, config=config)

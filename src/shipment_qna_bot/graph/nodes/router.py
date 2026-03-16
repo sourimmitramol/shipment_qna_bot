@@ -6,27 +6,43 @@ from shipment_qna_bot.logging.logger import logger
 
 def route_node(
     state: GraphState,
-) -> Literal["retrieval", "analytics", "static_info", "clarification", "end"]:
+) -> Literal[
+    "retrieval",
+    "analytics",
+    "weather_impact",
+    "static_info",
+    "clarification",
+    "end",
+]:
     """
     Decides the next path based on intent.
     """
     intent = state.get("intent")
+    sub_intents = state.get("sub_intents") or []
 
     if intent == "company_overview":
         return "static_info"
+<<<<<<< HEAD
     if intent == "analytics" and (
         state.get("topic_shift_candidate") or state.get("analytics_scope_candidate")
     ):
+=======
+    if intent == "clarification":
+        return "clarification"
+    if intent == "greeting":
+        return "end"
+    if intent == "end":
+        return "end"
+    if "weather" in sub_intents:
+        logger.info("Routing query to dedicated weather impact path.")
+        return "weather_impact"
+    if intent == "analytics" and state.get("topic_shift_candidate"):
+>>>>>>> old_main_dec25_2
         return "clarification"
     if intent == "analytics":
         return "analytics"
-    if intent == "clarification":
-        return "clarification"
-    elif intent in ["retrieval", "status", "eta", "delay"]:
+    if intent in ["retrieval", "status", "eta", "delay"]:
         # We group status/eta/delay under retrieval for backward compatibility if needed,
         # but LLM now primarily outputs 'retrieval' or 'greeting'.
         return "retrieval"
-    elif intent == "greeting":
-        return "end"
-    else:
-        return "end"
+    return "end"

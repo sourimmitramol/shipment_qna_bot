@@ -489,14 +489,21 @@
         // History for download
         let chatHistory = [{ role: 'bot', text: INITIAL_BOT_MESSAGE, timestamp: new Date().toISOString() }];
 
+        function persistConversationId(id) {
+            conversationId = id;
+            sessionStorage.setItem('convId', conversationId);
+            sessionDisplay.textContent = conversationId;
+        }
+
         function newConversationId() {
-            return 'web-' + Date.now();
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                return `web-${window.crypto.randomUUID()}`;
+            }
+            return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         }
 
         function resetChatSession() {
-            conversationId = newConversationId();
-            sessionStorage.setItem('convId', conversationId);
-            sessionDisplay.textContent = conversationId;
+            persistConversationId(newConversationId());
             chatContainer.innerHTML = '';
             chatHistory = [];
             addMessage(INITIAL_BOT_MESSAGE, 'bot');
@@ -504,8 +511,7 @@
 
         // Simple conversation ID for demo (session storage)
         let conversationId = sessionStorage.getItem('convId') || newConversationId();
-        sessionStorage.setItem('convId', conversationId);
-        sessionDisplay.textContent = conversationId;
+        persistConversationId(conversationId);
 
         // Reset session id when the tab/window is closed or refreshed
         window.addEventListener('beforeunload', () => {
@@ -523,12 +529,9 @@
                     } else {
                         consigneeInput.value = '';
                     }
-                    if (data.conversation_id) {
-                        conversationId = data.conversation_id;
-                        sessionDisplay.textContent = conversationId;
+                    if (!conversationId && data.conversation_id) {
+                        persistConversationId(data.conversation_id);
                     } else {
-                        // If no session on server, we might still have a local one 
-                        // but it's better to keep it in sync.
                         sessionDisplay.textContent = conversationId;
                     }
                 }
@@ -550,8 +553,7 @@
                 const storedId = localStorage.getItem('serverInstanceId') || '';
                 if (serverId && storedId && serverId !== storedId) {
                     // Server restarted, clear everything
-                    conversationId = newConversationId();
-                    sessionDisplay.textContent = conversationId;
+                    persistConversationId(newConversationId());
                     consigneeInput.value = '';
                     chatContainer.innerHTML = '';
                     chatHistory = [];
@@ -844,12 +846,22 @@
             if (role === 'bot') {
                 let renderText = text || '';
                 let fallbackTable = null;
+<<<<<<< HEAD
                 const allowAnalyticsRender = String(intent || '').toLowerCase() === 'analytics';
                 const hasTableData = !!(table && Array.isArray(table.rows) && table.rows.length > 0);
 
                 if (hasTableData) {
+=======
+                const isAnalyticsIntent = String(intent || '').toLowerCase() === 'analytics';
+                const hasStructuredPayload =
+                    (chart && Array.isArray(chart.data) && chart.data.length > 0) ||
+                    (table && Array.isArray(table.rows) && table.rows.length > 0);
+                const allowStructuredRender = isAnalyticsIntent || hasStructuredPayload;
+
+                if (allowStructuredRender && table && table.rows && table.rows.length > 0) {
+>>>>>>> old_main_dec25_2
                     renderText = stripMarkdownTables(renderText);
-                } else if (allowAnalyticsRender) {
+                } else if (allowStructuredRender) {
                     fallbackTable = parseSpaceAlignedTable(renderText);
                     if (fallbackTable) {
                         renderText = fallbackTable.leadText || '';
@@ -859,19 +871,30 @@
                 const contentDiv = document.createElement('div');
                 if (renderText.trim()) {
                     contentDiv.innerHTML = marked.parse(renderText);
+<<<<<<< HEAD
                     normalizeRenderedTables(contentDiv);
+=======
+                    if (allowStructuredRender) {
+                        normalizeRenderedTables(contentDiv);
+                    }
+>>>>>>> old_main_dec25_2
                     div.appendChild(contentDiv);
                 }
 
-                if (allowAnalyticsRender && chart && Array.isArray(chart.data) && chart.data.length > 0) {
+                if (allowStructuredRender && chart && Array.isArray(chart.data) && chart.data.length > 0) {
                     const chartEl = renderChart(chart);
                     div.appendChild(chartEl);
                 }
 
+<<<<<<< HEAD
                 if (hasTableData) {
                     const tableEl = renderTable(table, { analytics: allowAnalyticsRender });
+=======
+                if (allowStructuredRender && table && table.rows && table.rows.length > 0) {
+                    const tableEl = renderTable(table, { analytics: true });
+>>>>>>> old_main_dec25_2
                     div.appendChild(tableEl);
-                } else if (allowAnalyticsRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
+                } else if (allowStructuredRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
                     const tableEl = renderTable(fallbackTable.table, { analytics: true });
                     div.appendChild(tableEl);
                 }
@@ -1039,7 +1062,10 @@
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Conversation-Id': conversationId
+                    },
                     body: JSON.stringify({
                         question: text,
                         conversation_id: conversationId,
@@ -1050,13 +1076,15 @@
                 const data = await response.json();
 
                 if (data.answer) {
+                    if (data.conversation_id) {
+                        persistConversationId(data.conversation_id);
+                    }
                     addMessage(data.answer, 'bot', data.metadata, data.table, data.intent, data.chart);
                     if (data.intent === 'end') {
                         // Session was cleared on backend, let's clear local UI too for next turn
                         setTimeout(() => {
                             consigneeInput.value = '';
-                            conversationId = newConversationId();
-                            sessionDisplay.textContent = conversationId;
+                            persistConversationId(newConversationId());
                         }, 2000); // Small delay so they can read the goodbye
                     }
                 } else {
