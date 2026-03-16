@@ -67,6 +67,109 @@ def _merge_usage(state: Dict[str, Any], usage: Optional[Dict[str, Any]]) -> None
     state["usage_metadata"] = usage_metadata
 
 
+def _mentions_final_destination(text: str) -> bool:
+    lowered = (text or "").lower()
+    if "final destination" in lowered or "final_destination" in lowered:
+        return True
+    if "distribution center" in lowered or "distribution centre" in lowered:
+        return True
+    if re.search(r"\bin-?dc\b", lowered):
+        return True
+    if re.search(r"\bfd\b", lowered):
+        return True
+    return False
+
+
+def _mentions_discharge_port(text: str) -> bool:
+    lowered = (text or "").lower()
+    if "discharge port" in lowered or "port of discharge" in lowered:
+        return True
+    if re.search(r"\bdp\b", lowered):
+        return True
+    return False
+
+
+def _has_unqualified_location_arrival_intent(text: str) -> bool:
+    lowered = (text or "").lower()
+    if not lowered:
+        return False
+    if _mentions_final_destination(lowered) or _mentions_discharge_port(lowered):
+        return False
+
+    arrival_terms = [
+        "arrive",
+        "arrival",
+        "arriving",
+        "scheduled to arrive",
+        "schedule to arrive",
+        "eta",
+        "landing",
+    ]
+    if not any(term in lowered for term in arrival_terms):
+        return False
+
+    location_hint = re.search(r"\b(at|in|into|to)\s+[a-z0-9]", lowered)
+    return location_hint is not None
+
+
+def _location_scope_guidance(question: str) -> str:
+    if _mentions_final_destination(question):
+        return """
+12. **LOCATION SCOPE:** This question explicitly refers to the final destination. Use `final_destination` for the location filter and use final-destination dates (`best_eta_fd_date`, fallback `eta_fd_date`) unless the user also asks for DP.
+""".strip()
+
+    if _mentions_discharge_port(question):
+        return """
+12. **LOCATION SCOPE:** This question explicitly refers to discharge port / DP. Use `discharge_port` for the location filter and use discharge-port dates (`best_eta_dp_date`, fallback `eta_dp_date`) unless the user also asks for FD.
+""".strip()
+
+    if _has_unqualified_location_arrival_intent(question):
+        return """
+12. **LOCATION SCOPE:** If the user asks about arriving/scheduled to arrive at a location but does NOT explicitly say DP/discharge port or FD/final destination, treat that location as ambiguous and cover BOTH legs.
+    - Match the location against `discharge_port` OR `final_destination`.
+    - For scheduled/ETA arrival filters, check both `COALESCE(best_eta_dp_date, eta_dp_date)` and `COALESCE(best_eta_fd_date, eta_fd_date)`.
+    - Build the WHERE clause so either the DP branch OR the FD branch can satisfy the request.
+    - When returning rows, include both `discharge_port` and `final_destination`, plus both ETA columns when relevant.
+
+Example:
+User: "Show all POs scheduled to arrive at Long Beach in Apr 2026"
+SQL:
+```sql
+SELECT DISTINCT
+    po_numbers,
+    discharge_port,
+    final_destination,
+    strftime(COALESCE(best_eta_dp_date, eta_dp_date), '%d-%b-%Y') AS scheduled_eta_dp,
+    strftime(COALESCE(best_eta_fd_date, eta_fd_date), '%d-%b-%Y') AS scheduled_eta_fd
+FROM df
+WHERE (
+    discharge_port ILIKE '%Long Beach%'
+    OR final_destination ILIKE '%Long Beach%'
+)
+AND (
+    (
+        COALESCE(best_eta_dp_date, eta_dp_date) >= DATE '2026-04-01'
+        AND COALESCE(best_eta_dp_date, eta_dp_date) < DATE '2026-05-01'
+    )
+    OR (
+        COALESCE(best_eta_fd_date, eta_fd_date) >= DATE '2026-04-01'
+        AND COALESCE(best_eta_fd_date, eta_fd_date) < DATE '2026-05-01'
+    )
+)
+ORDER BY COALESCE(
+    best_eta_dp_date,
+    eta_dp_date,
+    best_eta_fd_date,
+    eta_fd_date
+) DESC;
+```
+""".strip()
+
+    return """
+12. **LOCATION SCOPE:** Use the most relevant location/date fields for the user's wording and keep DP and FD distinct unless the question is ambiguous.
+""".strip()
+
+
 def _repair_generated_sql(
     question: str,
     sql: str,
@@ -415,6 +518,8 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             if k in columns:
                 col_ref += f"- `{k}`: {v['desc']} (Type: {v['type']})\n"
 
+        location_scope_guidance = _location_scope_guidance(q)
+
         system_prompt = f"""
 You are a SQL Data Analyst powered by DuckDB. You have access to a view `df` containing shipment data.
 Your goal is to write SQL queries to answer the user's question using `df`.
@@ -451,6 +556,7 @@ Sample Data:
 9. Use `ILIKE '%pattern%'` for flexible case-insensitive text filtering.
 10. **SORTING RULE:** For results containing date columns, sort by latest date first (DESC) BEFORE formatting if possible, or ensure logical sorting.
 11. Return ONLY the SQL inside a ```sql``` block. Explain your logic briefly outside the block.
+{location_scope_guidance}
 
 ## Examples:
 User: "How many delivered shipments?"

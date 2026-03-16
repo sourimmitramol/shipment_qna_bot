@@ -61,3 +61,38 @@ def test_session_persistence_and_exit(monkeypatch):
     data = response.json()
     assert data["consignee_codes"] == []
     assert data["conversation_id"] is None
+
+
+def test_payload_conversation_id_overrides_existing_session(monkeypatch):
+    local_client = TestClient(app)
+
+    def fake_run_graph(initial_state: dict):
+        return {
+            "intent": "retrieval",
+            "answer_text": "Here is your data.",
+            "conversation_id": initial_state.get("conversation_id"),
+        }
+
+    monkeypatch.setattr(routes_module, "run_graph", fake_run_graph)
+
+    first_payload = {
+        "question": "How are my shipments?",
+        "consignee_codes": ["0000866"],
+        "conversation_id": "frontend-conv-1",
+    }
+    first_response = local_client.post("/api/chat", json=first_payload)
+    assert first_response.status_code == 200
+    assert first_response.json()["conversation_id"] == "frontend-conv-1"
+
+    second_payload = {
+        "question": "Give me the next update.",
+        "consignee_codes": ["0000866"],
+        "conversation_id": "frontend-conv-2",
+    }
+    second_response = local_client.post("/api/chat", json=second_payload)
+    assert second_response.status_code == 200
+    assert second_response.json()["conversation_id"] == "frontend-conv-2"
+
+    session_response = local_client.get("/api/session")
+    assert session_response.status_code == 200
+    assert session_response.json()["conversation_id"] == "frontend-conv-2"

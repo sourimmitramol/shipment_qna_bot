@@ -37,9 +37,10 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     - I run the LangGraph and return the final answer, including any charts or tables.
     """
 
-    # I prioritize existing session IDs to prevent cross-user collisions.
+    # The frontend owns the logical chat thread ID.
+    # Session storage is only a fallback for callers that do not send one.
     session_id = request.session.get("conversation_id")
-    conversation_id = session_id or payload.conversation_id or str(uuid.uuid4())
+    conversation_id = payload.conversation_id or session_id or str(uuid.uuid4())
 
     # Store in session for future requests
     request.session["conversation_id"] = conversation_id

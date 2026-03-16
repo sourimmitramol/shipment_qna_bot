@@ -30,6 +30,23 @@ class _StubChatTool:
         }
 
 
+class _CapturingSqlChatTool:
+    def __init__(self, sql: str):
+        self._sql = sql
+        self.messages = None
+
+    def chat_completion(self, messages, temperature=0.0):
+        self.messages = messages
+        return {
+            "content": f"```sql\n{self._sql}\n```",
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2,
+            },
+        }
+
+
 class _StubCon:
     def __init__(self):
         self.df = lambda: pd.DataFrame(
@@ -212,3 +229,34 @@ def test_analytics_dict_result_generates_pie_chart(monkeypatch):
     assert new_state["chart_spec"]["kind"] == "pie"
     assert new_state["chart_spec"]["encodings"]["label"] == "label"
     assert new_state["chart_spec"]["encodings"]["value"] == "value"
+
+
+def test_unqualified_arrival_location_prompt_covers_dp_and_fd(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "discharge_port": ["LONG BEACH"],
+            "final_destination": ["LONG BEACH"],
+            "best_eta_dp_date": ["2026-04-10"],
+        }
+    )
+    chat = _CapturingSqlChatTool("SELECT count(*) AS total FROM df")
+
+    monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
+    monkeypatch.setattr(
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(df)
+    )
+    monkeypatch.setattr(analytics_module, "_get_chat", lambda: chat)
+    monkeypatch.setattr(
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+    )
+
+    analytics_module.analytics_planner_node(
+        _base_state("Show all POs scheduled to arrive at Long Beach in Apr 2026")
+    )
+
+    assert chat.messages is not None
+    system_prompt = chat.messages[0]["content"]
+    assert "treat that location as ambiguous and cover BOTH legs" in system_prompt
+    assert "`discharge_port` OR `final_destination`" in system_prompt
+    assert "COALESCE(best_eta_dp_date, eta_dp_date)" in system_prompt
+    assert "COALESCE(best_eta_fd_date, eta_fd_date)" in system_prompt
