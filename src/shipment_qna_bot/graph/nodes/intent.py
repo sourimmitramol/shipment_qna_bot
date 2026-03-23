@@ -36,6 +36,7 @@ def _get_chat_tool() -> AzureOpenAIChatTool:
         _chat_tool = AzureOpenAIChatTool()
     return _chat_tool
 
+
 def _has_extracted_ids(state: GraphState) -> bool:
     extracted = state.get("extracted_ids") or {}
     if not isinstance(extracted, dict):

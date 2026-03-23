@@ -27,9 +27,7 @@ def test_overview_handles_mcs_definition_with_shipment_wording(tmp_path, monkeyp
     assert should_handle_overview("What does MCS stand for in shipment data?")
 
 
-def test_overview_rejects_specific_lookup_even_with_company_term(
-    tmp_path, monkeypatch
-):
+def test_overview_rejects_specific_lookup_even_with_company_term(tmp_path, monkeypatch):
     path = _write_overview(tmp_path)
     monkeypatch.setenv("SHIPMENT_QNA_BOT_OVERVIEW_PATH", str(path))
 

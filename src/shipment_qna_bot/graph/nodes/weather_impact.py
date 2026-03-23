@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
-from shipment_qna_bot.tools.weather_tool import WeatherTool
+# from shipment_qna_bot.tools.weather_tool import WeatherTool
 from shipment_qna_bot.utils.config import is_weather_enabled
 
 _BLOB_MGR: Optional[BlobAnalyticsManager] = None

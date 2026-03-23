@@ -203,9 +203,7 @@ def test_analytics_generates_pie_chart_spec(monkeypatch, tmp_path):
     assert new_state["chart_spec"]["encodings"]["value"] == "count"
 
 
-def test_analytics_keeps_table_without_chart_when_not_requested(
-    monkeypatch, tmp_path
-):
+def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch, tmp_path):
     parquet_path = _write_parquet(tmp_path)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
