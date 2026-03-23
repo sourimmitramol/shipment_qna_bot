@@ -109,7 +109,7 @@ def build_graph():
     return workflow.compile(checkpointer=checkpointer)
 
 
-# Lazy-loaded singleton
+# Lazy-loaded singleton--
 _graph_app = None
 
 
