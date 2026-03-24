@@ -63,4 +63,4 @@ jobs:
         with:
           app-name: 'shipmentqnabot'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_BE813B987F17447981BD17A903C79C3B }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_60A16CF265B74C8ABFF5964CEA8C1C8D }}
