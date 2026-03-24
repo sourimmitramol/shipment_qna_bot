@@ -398,9 +398,13 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
             if _mentions_session_scope(raw_q) or _mentions_session_scope(normalized_q):
                 state["analytics_context_mode"] = "session"
                 return
-            state["analytics_scope_candidate"] = _build_analytics_scope_candidate(
+            analytics_scope_candidate = _build_analytics_scope_candidate(
                 raw_q, normalized_q, state
             )
+            if analytics_scope_candidate:
+                state["analytics_context_mode"] = "previous_result"
+                return
+            state["analytics_scope_candidate"] = None
 
         question = (state.get("question_raw") or "").strip()
         question, forced_new_topic = _strip_new_topic_prefix(question)
@@ -463,7 +467,7 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
 
         # Praise/Feedback Guardrail (Issue A)
         praise_patterns = [
-            r"(thank you|thanks|great|good job|well done|nice|cool|awesome|perfect|exactly|no corrections?|you are (doing )?good|keep it up)",
+            r"^(thank you|thanks|great|good job|well done|nice|cool|awesome|perfect|exactly|no corrections?|you are (doing )?good|keep it up)[\s\d!.]*$",
             r"^(no|nothing|that's it|all set|i'm good|no thanks)[\s.]*$",
         ]
         if any(re.search(p, question.lower()) for p in praise_patterns):
